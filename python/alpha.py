@@ -1,12 +1,17 @@
 # pylint: disable=E1136
 from __future__ import annotations
 from pprint import pprint
-from sympy import Number
+import copy
+# pylint: disable=unused-wildcard-import
+from sympy import *
+from sympy import Number, init_printing
 from sympy.matrices import Matrix
-from typing import Literal, Optional, Union, Iterable, List, Callable, TypeVar, Tuple
+from typing import Literal, Optional, Union, Iterable, List, Callable, TypeVar, Tuple, Set, Dict
 import re
 import operator
 import functools
+
+init_printing(use_unicode=True)
 
 T = TypeVar('T')
 U = TypeVar('U')
@@ -38,6 +43,22 @@ def test_example():
     enthalpy_answer = path.dot(deltas)
     print("answer:", enthalpy_answer)
 
+
+###############################################################################
+# HELPERS
+###############################################################################
+
+def pretty_subscript(value: Number) -> str:
+    (numerator, denominator) = value.as_numer_denom()
+    if denominator == 1:
+        subscript_patterns = str.maketrans("0123456789", "₀₁₂₃₄₅₆₇₈₉")
+        return str(numerator).translate(subscript_patterns)
+    return str(value)
+
+def flatten_lists(xs: List[List[T]]) -> List[T]:
+    result = functools.reduce(operator.add, xs)
+    assert isinstance(result, list)
+    return result
 
 ###############################################################################
 # ELEMENT
@@ -72,11 +93,15 @@ class Unit:
     subscript: Number
     def __init__(self, payload: Element, subscript: Number = 1):
         self.payload = payload
+        if isinstance(subscript, int):
+            subscript = Number(subscript)
         self.subscript = subscript
     def __str__(self) -> str:
-        return "{}{}".format(self.payload, self.subscript)
+        sub = pretty_subscript(self.subscript)
+        return "{}{}".format(self.payload, sub)
     def __repr__(self) -> str:
-        return "Unit({}, {})".format(self.payload, self.subscript)
+        sub = pretty_subscript(self.subscript)
+        return "Unit({}{})".format(self.payload, sub)
 
 class Chunk:
     payload: List[Node]
@@ -114,10 +139,8 @@ class Chunk:
             state_str,
         ])
     def __repr__(self) -> str:
-        payload_str = ", ".join(map(str, self.payload))
-        coefficient_str = ""
-        if self.coefficient != 1:
-            coefficient_str = "{}, ".format(self.coefficient)
+        payload_str = "".join(map(str, self.payload))
+        coefficient_str = "{}, ".format(self.coefficient)
         state_str = ""
         if self.state != None:
             state_str = "{}, ".format(self.state)
@@ -163,11 +186,19 @@ class Node:
         return isinstance(self.variant, Parens)
     def is_unit(self) -> bool:
         return isinstance(self.variant, Unit)
-    # @property
-    # def coefficient(self) -> Optional[Number]:
-    #     if self.is_chunk():
-    #         return self.__coefficient
-    #     return None
+    def coefficient(self) -> Optional[Number]:
+        if self.is_chunk():
+            assert isinstance(self.variant, Chunk)
+            return self.variant.coefficient
+        return None
+    def set_coefficient_mut(self, new_coefficient: Number):
+        assert isinstance(self.variant, Chunk)
+        self.variant.coefficient = new_coefficient
+    def set_coefficient(self, new_coefficient: Number) -> Node:
+        assert isinstance(self.variant, Chunk)
+        return_node = copy.deepcopy(self)
+        return_node.set_coefficient(new_coefficient)
+        return return_node
     # @coefficient.setter
     # def coefficient(self, new_value: Number):
     #     if self.is_chunk():
@@ -200,11 +231,6 @@ class Node:
     #         assert isinstance(self.__payload, Element)
     #         return self.__payload
     #     return None
-    # # def for_each(
-    # #     self,
-    # #     unit: Callable[]
-    # # ):
-    # #     pass
     def foreach(
         self,
         unit: Optional[Callable[[Unit], T]] = None,
@@ -236,13 +262,13 @@ class Node:
         return self.variant.__str__()
     def __repr__(self) -> str:
         return self.variant.__repr__()
-    def atoms(self) -> List[Element]:
+    def elements(self) -> List[Element]:
         def for_unit(unit: Unit) -> List[Element]:
             return [unit.payload] * unit.subscript
         def for_chunk(chunk: Chunk) -> List[Element]:
             result = functools.reduce(
                 operator.add,
-                map(lambda x: x.atoms(), chunk.payload)
+                map(lambda x: x.elements(), chunk.payload)
             )
             assert isinstance(result, list)
             for x in result:
@@ -251,7 +277,7 @@ class Node:
         def for_parens(parens: Parens) -> List[Element]:
             result = functools.reduce(
                 operator.add,
-                map(lambda x: x.atoms(), parens.payload)
+                map(lambda x: x.elements(), parens.payload)
             )
             assert isinstance(result, list)
             for x in result:
@@ -264,6 +290,15 @@ class Node:
         )
         assert isinstance(result, list)
         return result
+    def element_name_map(self) -> Dict[str, int]:
+        results: Dict[str, int] = {}
+        for atom in self.elements():
+            name = atom.name
+            if name in results:
+                results[name] = results[name] + 1
+            else:
+                results[name] = 1
+        return results
 
 def identity(x: T) -> T:
     return x
@@ -280,31 +315,48 @@ class Reaction:
             assert isinstance(x, Node)
         self.reactants = reactants
         self.products = products
+    def __str__(self) -> str:
+        reactants = " + ".join(map(lambda x: str(x), self.reactants))
+        products = " + ".join(map(lambda x: str(x), self.products))
+        return "{} -> {}".format(reactants, products)
     def __repr__(self) -> str:
         return "Reaction({}, {})".format(self.reactants, self.products)
     @classmethod
     def from_str(cls, source: str) -> Reaction:
         return init_reaction_parser.parse(source)
-    
+    def all_elements(self) -> Set[str]:
+        all_elements = set()
+        for term in self.reactants + self.products:
+            for atom in term.elements():
+                all_elements.add(atom.name)
+        return all_elements
     def balance(self):
-        pass
-
-###############################################################################
-# UNITS
-###############################################################################
-
-class KiloJoulePerMol:
-    def __init__(self, value: Number):
-        self.value = value
-
-###############################################################################
-# THERMOCHEMICAL EQUATION
-###############################################################################
-
-class ThermochemicalEquation:
-    def __init__(self, reaction: Reaction, enthalpy_change: KiloJoulePerMol):
-        self.reaction = reaction
-        self.enthalpy_change = enthalpy_change
+        all_elements: Set[str] = self.all_elements()
+        rows = []
+        def term_to_row(term: Node, mult: int):
+            term_dict: Dict[str, int] = term.element_name_map()
+            row = []
+            for element in all_elements:
+                if element in term_dict:
+                    row.append(term_dict[element] * mult)
+                else:
+                    row.append(0)
+            rows.append(row)
+        for term in self.reactants:
+            term_to_row(term, -1)
+        for term in self.products:
+            term_to_row(term, 1)
+        co_matrix = Matrix(rows).transpose()
+        co_nullspace = co_matrix.nullspace(simplify=True)[0]
+        balanced_coefficients = co_nullspace / gcd(tuple(co_nullspace))
+        def update_terms(terms: List[Node], new_coefs: List[int]):
+            assert len(terms) == len(new_coefs)
+            for co, term in zip(new_coefs, terms):
+                term.set_coefficient_mut(co)
+        reactant_coefficients = balanced_coefficients[:len(self.reactants)]
+        product_coefficients = balanced_coefficients[len(self.reactants):]
+        update_terms(self.reactants, reactant_coefficients)
+        update_terms(self.products, product_coefficients)
 
 ###############################################################################
 # PARSER
@@ -315,18 +367,29 @@ import parsec
 def init_node_parser():
     whitespace = parsec.regex(r'\s+', re.MULTILINE)
     ignore = parsec.many(whitespace)
-    lexeme = lambda p: p << ignore  # skip all ignored characters.
+    lexeme = lambda p: p << ignore
     lparen = lexeme(parsec.string('('))
     rparen = lexeme(parsec.string(')'))
+    ws = parsec.optional(whitespace)
+    @parsec.generate
+    def parse_state():
+        gas = parsec.string('(g)')
+        solid = parsec.string('(s)')
+        liquid = parsec.string('(l)')
+        aqueous = parsec.string('(aq)')
+        result = yield lexeme(gas ^ solid ^ liquid ^ aqueous)
+        return result
     @parsec.generate
     def parse_chunk():
         coefficient = yield parsec.optional(parsec.regex('[0-9]+'), default_value='1')
         payload = yield parsec.many1(parse_parens | parse_unit)
+        state = yield ws >> parsec.optional(parse_state)
         for x in payload:
             assert isinstance(x, Node)
         return Node(Chunk(
             payload,
             coefficient=int(coefficient),
+            state=state,
         ))
     @parsec.generate
     def parse_parens():
@@ -348,7 +411,7 @@ def init_node_parser():
 def init_term_parser():
     whitespace = parsec.regex(r'\s+', re.MULTILINE)
     ignore = parsec.many(whitespace)
-    lexeme = lambda p: p << ignore  # skip all ignored characters.
+    lexeme = lambda p: p << ignore
     plus_sym = lexeme(parsec.string('+'))
     terms = yield parsec.sepBy1(lexeme(init_node_parser()), plus_sym)
     for x in terms:
@@ -360,14 +423,53 @@ def init_term_parser():
 def init_reaction_parser():
     whitespace = parsec.regex(r'\s+', re.MULTILINE)
     ignore = parsec.many(whitespace)
-    lexeme = lambda p: p << ignore  # skip all ignored characters.
-    reaction_symbol = lexeme(parsec.string('->'))
+    lexeme = lambda p: p << ignore
+    reaction_symbol = lexeme(parsec.string('->') | parsec.string('='))
     left = yield lexeme(init_term_parser)
     yield reaction_symbol
     right = yield lexeme(init_term_parser)
     for x in left + right:
         assert isinstance(x, Node)
     return Reaction(left, right)
+
+###############################################################################
+# UNITS
+###############################################################################
+
+class KiloJoulePerMol:
+    def __init__(self, value: Number):
+        self.value = value
+    def __str__(self) -> str:
+        return "{} kJ ㏖⁻¹".format(self.value)
+
+###############################################################################
+# THERMOCHEMICAL EQUATION
+###############################################################################
+
+class ThermochemicalEquation:
+    def __init__(self, reaction: Reaction, enthalpy_change: KiloJoulePerMol):
+        self.reaction = reaction
+        self.enthalpy_change = enthalpy_change
+    def __str__(self) -> str:
+        return "{} where ΔH = {}".format(
+            self.reaction,
+            self.enthalpy_change
+        )
+
+def enthalpy_of_reaction(
+    unknown_reaction: Reaction,
+    known_reactions: List[ThermochemicalEquation],
+) -> None:
+    all_reactions = (
+        list(map(lambda x: x.reaction, known_reactions)) +
+        [unknown_reaction]
+    )
+    all_terms: Set[Node] = set()
+    for reaction in all_reactions:
+        for term in reaction.reactants + reaction.products:
+            all_terms.add(term)
+    pprint(all_terms)
+
 
 
 ###############################################################################
@@ -383,12 +485,28 @@ def program(func):
 # DEV
 ###############################################################################
 
+# @program
+# def dev1():
+#     reaction = Reaction.from_str(
+#         "C3H8 + O2 -> H2O + CO2"
+#     )
+#     reaction.balance()
+#     # print(str(reaction))
+
 @program
-def test():
-    reaction = Reaction.from_str(
-        "C3H8 + O2 -> H2O + CO2"
+def dev2():
+    reaction1 = ThermochemicalEquation(
+        Reaction.from_str("CH4(g) + 2O2(g) = CO2(g) + 2H2O(l)"),
+        KiloJoulePerMol(-890),
     )
-    for term in reaction.reactants + reaction.products:
-        pprint(term.atoms())
+    reaction2 = ThermochemicalEquation(
+        Reaction.from_str("2CO(g) + O2(g) = 2CO2(g)"),
+        KiloJoulePerMol(-566),
+    )
+    reaction3 = Reaction.from_str("2CH4(g) + 3O2(g) = 2CO(g) + 4H2O(l)")
+    enthalpy_of_reaction(
+        reaction3,
+        [reaction1, reaction2]
+    )
 
 
