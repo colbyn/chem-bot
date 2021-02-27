@@ -5,6 +5,8 @@ from sympy import Number
 from sympy.matrices import Matrix
 from typing import Literal, Optional, Union, Iterable, List, Callable, TypeVar, Tuple
 import re
+import operator
+import functools
 
 T = TypeVar('T')
 U = TypeVar('U')
@@ -88,6 +90,8 @@ class Chunk:
         state: Optional[str] = None,
         charge: Optional[Number] = None,
     ):
+        for x in payload:
+            assert isinstance(x, Node)
         self.payload = payload
         self.coefficient = coefficient
         self.state = state
@@ -131,6 +135,8 @@ class Parens:
     payload: List[Node]
     subscript: Number
     def __init__(self, payload: List[Node], subscript: Number = 1):
+        for x in payload:
+            assert isinstance(x, Node)
         self.payload = payload
         self.subscript = subscript
     def __str__(self):
@@ -204,24 +210,60 @@ class Node:
         unit: Optional[Callable[[Unit], T]] = None,
         chunk: Optional[Callable[[Chunk], T]] = None,
         parens: Optional[Callable[[Parens], T]] = None,
-    ) -> Optional[T]:
+    ) -> Union[T, Node]:
+        def pack(x: T) -> Union[T, Node]:
+            if isinstance(x, Unit):
+                return Node(x)
+            if isinstance(x, Chunk):
+                return Node(x)
+            if isinstance(x, Parens):
+                return Node(x)
+            return x
         if self.is_unit() and unit != None:
             assert callable(unit)
             assert isinstance(self.variant, Unit)
-            return unit(self.variant)
+            return pack(unit(self.variant))
         if self.is_parens() and parens != None:
             assert callable(parens)
             assert isinstance(self.variant, Parens)
-            return parens(self.variant)
+            return pack(parens(self.variant))
         if self.is_chunk() and chunk != None:
             assert callable(chunk)
             assert isinstance(self.variant, Chunk)
-            return chunk(self.variant)
-        return None
+            return pack(chunk(self.variant))
+        raise ValueError()
     def __str__(self):
         return self.variant.__str__()
     def __repr__(self) -> str:
         return self.variant.__repr__()
+    def atoms(self) -> List[Element]:
+        def for_unit(unit: Unit) -> List[Element]:
+            return [unit.payload] * unit.subscript
+        def for_chunk(chunk: Chunk) -> List[Element]:
+            result = functools.reduce(
+                operator.add,
+                map(lambda x: x.atoms(), chunk.payload)
+            )
+            assert isinstance(result, list)
+            for x in result:
+                assert isinstance(x, Element)
+            return result * chunk.coefficient
+        def for_parens(parens: Parens) -> List[Element]:
+            result = functools.reduce(
+                operator.add,
+                map(lambda x: x.atoms(), parens.payload)
+            )
+            assert isinstance(result, list)
+            for x in result:
+                assert isinstance(x, Element)
+            return result * parens.subscript
+        result = self.foreach(
+            unit = for_unit,
+            chunk = for_chunk,
+            parens = for_parens,
+        )
+        assert isinstance(result, list)
+        return result
 
 def identity(x: T) -> T:
     return x
@@ -243,6 +285,9 @@ class Reaction:
     @classmethod
     def from_str(cls, source: str) -> Reaction:
         return init_reaction_parser.parse(source)
+    
+    def balance(self):
+        pass
 
 ###############################################################################
 # UNITS
@@ -277,8 +322,10 @@ def init_node_parser():
     def parse_chunk():
         coefficient = yield parsec.optional(parsec.regex('[0-9]+'), default_value='1')
         payload = yield parsec.many1(parse_parens | parse_unit)
+        for x in payload:
+            assert isinstance(x, Node)
         return Node(Chunk(
-            [payload],
+            payload,
             coefficient=int(coefficient),
         ))
     @parsec.generate
@@ -287,12 +334,14 @@ def init_node_parser():
         xs = yield parsec.many1(parse_unit)
         yield rparen
         subscript = yield parsec.optional(parsec.regex('[0-9]+'), default_value='1')
+        for x in xs:
+            assert isinstance(x, Node)
         return Node(Parens(xs, subscript=int(subscript)))
     @parsec.generate
     def parse_unit():
         e = yield parsec.regex('[A-Z]([a-z]+)?')
         subscript = yield parsec.optional(parsec.regex('[0-9]+'), default_value='1')
-        return Unit(Element(e), subscript=int(subscript))
+        return Node(Unit(Element(e), subscript=int(subscript)))
     return parse_parens | parse_chunk | parse_unit
 
 @parsec.generate
@@ -302,6 +351,8 @@ def init_term_parser():
     lexeme = lambda p: p << ignore  # skip all ignored characters.
     plus_sym = lexeme(parsec.string('+'))
     terms = yield parsec.sepBy1(lexeme(init_node_parser()), plus_sym)
+    for x in terms:
+        assert isinstance(x, Node)
     return terms
 
 
@@ -314,11 +365,13 @@ def init_reaction_parser():
     left = yield lexeme(init_term_parser)
     yield reaction_symbol
     right = yield lexeme(init_term_parser)
+    for x in left + right:
+        assert isinstance(x, Node)
     return Reaction(left, right)
 
 
 ###############################################################################
-# DEV
+# UTILS
 ###############################################################################
 
 def program(func):
@@ -326,9 +379,16 @@ def program(func):
         func()
 
 
+###############################################################################
+# DEV
+###############################################################################
+
 @program
 def test():
-    node = Node.from_str("2H2O")
-    pprint(node)
+    reaction = Reaction.from_str(
+        "C3H8 + O2 -> H2O + CO2"
+    )
+    for term in reaction.reactants + reaction.products:
+        pprint(term.atoms())
 
 
