@@ -57,6 +57,66 @@ def pretty_subscript(value: Number) -> str:
         return str(numerator).translate(subscript_patterns)
     return str(value)
 
+def pretty_superscript(value: Number) -> str:
+    (numerator, denominator) = value.as_numer_denom()
+    if denominator == 1:
+        subscript_patterns = str.maketrans("0123456789", "⁰¹²³⁴⁵⁶⁷⁸⁹")
+        return str(numerator).translate(subscript_patterns)
+    return str(value)
+
+def pretty_coefficient(value: Number):
+    (num, den) = abs(value).as_numer_denom()
+    def pack(result: str) -> str:
+        if value < 0:
+            return "-{}".format(result)
+        else:
+            return result
+    if num == 0 and den == 3:
+        return pack("↉")
+    if num == 1 and den == 10:
+        return pack("⅒")
+    if num == 1 and den == 9:
+        return pack("⅑")
+    if num == 1 and den == 8:
+        return pack("⅛")
+    if num == 1 and den == 7:
+        return pack("⅐")
+    if num == 1 and den == 6:
+        return pack("⅙")
+    if num == 1 and den == 5:
+        return pack("⅕")
+    if num == 1 and den == 4:
+        return pack("¼")
+    if num == 1 and den == 3:
+        return pack("⅓")
+    if num == 1 and den == 2:
+        return pack("½")
+    if num == 2 and den == 5:
+        return pack("⅖")
+    if num == 2 and den == 3:
+        return pack("⅔")
+    if num == 3 and den == 8:
+        return pack("⅜")
+    if num == 3 and den == 5:
+        return pack("⅗")
+    if num == 3 and den == 4:
+        return pack("¾")
+    if num == 4 and den == 5:
+        return pack("⅘")
+    if num == 5 and den == 8:
+        return pack("⅝")
+    if num == 5 and den == 6:
+        return pack("⅚")
+    if num == 7 and den == 8:
+        return pack("⅞")
+    if den == 1:
+        return pack(str(num))
+    else:
+        top = pretty_superscript(num)
+        bot = pretty_subscript(den)
+        return "{}⁄{}".format(top, bot)
+
+
 def flatten_lists(xs: List[List[T]]) -> List[T]:
     result = functools.reduce(operator.add, xs)
     assert isinstance(result, list)
@@ -121,14 +181,16 @@ class Chunk:
         for x in payload:
             assert isinstance(x, Node)
         self.payload = payload
+        if isinstance(coefficient, int):
+            coefficient = Number(coefficient)
         self.coefficient = coefficient
         self.state = state
         self.charge = charge
     def __str__(self) -> str:
         payload_str = "".join(map(str, self.payload))
-        subscript_str = ""
+        coefficient_str = ""
         if self.coefficient != 1:
-            subscript_str = str(self.coefficient)
+            coefficient_str = "{} ".format(pretty_coefficient(self.coefficient))
         state_str = ""
         if self.state != None:
             state_str = " {}".format(self.state)
@@ -136,7 +198,7 @@ class Chunk:
         if self.charge != None:
             charge_str = str(self.charge)
         return "".join([
-            subscript_str,
+            coefficient_str,
             payload_str,
             charge_str,
             state_str,
@@ -462,15 +524,29 @@ def init_node_parser():
         result = yield lexeme(gas ^ solid ^ liquid ^ aqueous)
         return result
     @parsec.generate
+    def parse_integer():
+        val = yield parsec.optional(parsec.regex('[0-9]+'), default_value='1')
+        return int(val)
+    @parsec.generate
+    def parse_fraction():
+        num = yield parsec.regex('[0-9]+')
+        yield parsec.string("/")
+        den = yield parsec.regex('[0-9]+')
+        return Rational(str(num), str(den))
+    @parsec.generate
+    def parse_coefficient():
+        result = yield parse_fraction ^ parse_integer
+        return result
+    @parsec.generate
     def parse_chunk():
-        coefficient = yield parsec.optional(parsec.regex('[0-9]+'), default_value='1')
+        coefficient = yield parsec.optional(parse_coefficient, default_value=1) << ws
         payload = yield parsec.many1(parse_parens | parse_unit)
         state = yield ws >> parsec.optional(parse_state)
         for x in payload:
             assert isinstance(x, Node)
         return Node(Chunk(
             payload,
-            coefficient=int(coefficient),
+            coefficient=coefficient,
             state=state,
         ))
     @parsec.generate
@@ -604,19 +680,48 @@ def program(func):
 
 # print(sys.getrecursionlimit())
 
+# @program
+# def dev2():
+#     reaction1 = ThermochemicalEquation(
+#         Reaction.from_str("CH4(g) + 2O2(g) = CO2(g) + 2H2O(l)"),
+#         KiloJoulePerMol(-890),
+#     )
+#     reaction2 = ThermochemicalEquation(
+#         Reaction.from_str("2CO(g) + O2(g) = 2CO2(g)"),
+#         KiloJoulePerMol(-566),
+#     )
+#     reaction3 = Reaction.from_str("2CH4(g) + 3O2(g) = 2CO(g) + 4H2O(l)")
+#     print(enthalpy_of_reaction(
+#         reaction3,
+#         [reaction1, reaction2]
+#     ))
+
+
 @program
-def dev2():
-    reaction1 = ThermochemicalEquation(
-        Reaction.from_str("CH4(g) + 2O2(g) = CO2(g) + 2H2O(l)"),
-        KiloJoulePerMol(-890),
-    )
-    reaction2 = ThermochemicalEquation(
-        Reaction.from_str("2CO(g) + O2(g) = 2CO2(g)"),
-        KiloJoulePerMol(-566),
-    )
-    reaction3 = Reaction.from_str("2CH4(g) + 3O2(g) = 2CO(g) + 4H2O(l)")
-    print(enthalpy_of_reaction(
-        reaction3,
-        [reaction1, reaction2]
+def dev3():
+    # reaction1 = ThermochemicalEquation(
+    #     Reaction.from_str(
+    #         "2C2H2(g) + 5O2(g) = 4CO2(g) + 2H2O(l)"
+    #     ),
+    #     KiloJoulePerMol(-2600.0),
+    # )
+    # reaction2 = ThermochemicalEquation(
+    #     Reaction.from_str(
+    #         "2C2H6(g) + 7O2(g) = 4CO2(g) + 6H2O(l)"
+    #     ),
+    #     KiloJoulePerMol(-3210.0),
+    # )
+    # reaction3 = ThermochemicalEquation(
+    #     Reaction.from_str(
+    #         "H2(g) + 1/2O2(g) = H2O(l)"
+    #     ),
+    #     KiloJoulePerMol(-286.0),
+    # )
+    # print(Node.from_str(
+    #     "1/2O2(g)"
+    # ))
+    print(Reaction.from_str(
+        "1/2O2(g) = 2H2O(l)"
     ))
+    
 
