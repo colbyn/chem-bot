@@ -474,7 +474,7 @@ class Reaction:
             results: Dict[str, int] = {}
             for term in terms:
                 for element in term.elements():
-                    if element in results:
+                    if element.name in results:
                         results[element.name] = results[element.name] + 1
                     else:
                         results[element.name] = 1
