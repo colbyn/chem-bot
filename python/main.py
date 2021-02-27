@@ -471,13 +471,13 @@ class Reaction:
         return None
     def is_balanced(self):
         def process(terms: List[Node]):
-            results = {}
+            results: Dict[str, int] = {}
             for term in terms:
                 for element in term.elements():
                     if element in results:
-                        results[element] = results[element] + 1
+                        results[element.name] = results[element.name] + 1
                     else:
-                        results[element] = 1
+                        results[element.name] = 1
             return results
         left = process(self.reactants)
         right = process(self.products)
