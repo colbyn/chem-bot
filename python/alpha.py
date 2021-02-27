@@ -1,8 +1,10 @@
 # pylint: disable=E1136
 from __future__ import annotations
 from pprint import pprint
-import copy
+import random
+# import copy
 # pylint: disable=unused-wildcard-import
+import sys
 from sympy import *
 from sympy import Number, init_printing
 from sympy.matrices import Matrix
@@ -100,8 +102,9 @@ class Unit:
         sub = pretty_subscript(self.subscript)
         return "{}{}".format(self.payload, sub)
     def __repr__(self) -> str:
-        sub = pretty_subscript(self.subscript)
-        return "Unit({}{})".format(self.payload, sub)
+        return "Unit({}, {})".format(self.payload, self.subscript)
+    # def __hash__(self):
+    #     return hash(repr(self))
 
 class Chunk:
     payload: List[Node]
@@ -140,19 +143,25 @@ class Chunk:
         ])
     def __repr__(self) -> str:
         payload_str = "".join(map(str, self.payload))
-        coefficient_str = "{}, ".format(self.coefficient)
+        coefficient_str = "{}".format(self.coefficient)
         state_str = ""
         if self.state != None:
-            state_str = "{}, ".format(self.state)
+            state_str = "{}".format(self.state)
         charge_str = ""
         if self.charge != None:
-            charge_str = "{}, ".format(self.charge)
-        return "Chunk({}{}{}{})".format(
-            coefficient_str,
-            payload_str,
-            charge_str,
-            state_str,
+            charge_str = "{}".format(self.charge)
+        xs = filter(
+            lambda x: len(x) > 1
+            ,[
+                coefficient_str,
+                payload_str,
+                charge_str,
+                state_str,
+            ]
         )
+        return "Chunk({})".format(", ".join(xs))
+    # def __hash__(self):
+    #     return hash(repr(self))
 
 class Parens:
     payload: List[Node]
@@ -166,6 +175,8 @@ class Parens:
         return "({})".format(self.payload)
     def __repr__(self) -> str:
         return "Parens({}, {})".format(self.payload, self.subscript)
+    # def __hash__(self):
+    #     return hash(repr(self))
 
 
 
@@ -179,7 +190,41 @@ class Node:
         self.variant = variant
     @classmethod
     def from_str(cls, source: str) -> Reaction:
+        subscript_patterns = str.maketrans("₀₁₂₃₄₅₆₇₈₉", "0123456789")
+        source = source.translate(subscript_patterns)
         return init_node_parser().parse(source)
+    def copy_node(self) -> Node:
+        if self.is_unit():
+            assert isinstance(self.variant, Unit)
+            return Node(Unit(
+                self.variant.payload,
+                subscript=self.variant.subscript
+            ))
+        if self.is_parens():
+            assert isinstance(self.variant, Parens)
+            parens = self.variant
+            payload = []
+            for x in parens.payload:
+                assert isinstance(x, Node)
+                payload.append(x.copy_node())
+            return Node(Parens(
+                payload,
+                subscript=parens.subscript
+            ))
+        if self.is_chunk():
+            assert isinstance(self.variant, Chunk)
+            chunk = self.variant
+            payload = []
+            for x in chunk.payload:
+                assert isinstance(x, Node)
+                payload.append(x.copy_node())
+            return Node(Chunk(
+                payload,
+                coefficient=chunk.coefficient,
+                state=chunk.state,
+                charge=chunk.charge
+            ))
+        raise SystemError()
     def is_chunk(self) -> bool:
         return isinstance(self.variant, Chunk)
     def is_parens(self) -> bool:
@@ -191,14 +236,29 @@ class Node:
             assert isinstance(self.variant, Chunk)
             return self.variant.coefficient
         return None
+    def coefficient_safe(self) -> Number:
+        if self.is_chunk():
+            assert isinstance(self.variant, Chunk)
+            return self.variant.coefficient
+        return 1
     def set_coefficient_mut(self, new_coefficient: Number):
         assert isinstance(self.variant, Chunk)
         self.variant.coefficient = new_coefficient
-    def set_coefficient(self, new_coefficient: Number) -> Node:
+    def set_coefficient_pure(self, new_coefficient: Number) -> Node:
         assert isinstance(self.variant, Chunk)
-        return_node = copy.deepcopy(self)
-        return_node.set_coefficient(new_coefficient)
+        return_node = self.copy_node()
+        return_node.set_coefficient_mut(new_coefficient)
         return return_node
+    def set_coefficient_safe(self, new_coefficient: Number) -> Node:
+        return_node = self.copy_node()
+        if isinstance(self.variant, Chunk):
+            return_node.set_coefficient_mut(new_coefficient)
+            return return_node
+        else:
+            return Node(Chunk(
+                [return_node],
+                coefficient=new_coefficient
+            ))
     # @coefficient.setter
     # def coefficient(self, new_value: Number):
     #     if self.is_chunk():
@@ -261,6 +321,13 @@ class Node:
     def __str__(self):
         return self.variant.__str__()
     def __repr__(self) -> str:
+        # if self.is_unit():
+        #     return "Node({})".format(self.variant.__repr__())
+        # if self.is_parens():
+        #     return "Node({})".format(self.variant.__repr__())
+        # if self.is_chunk():
+        #     return "Node({})".format(self.variant.__repr__())
+        # raise SystemError()
         return self.variant.__repr__()
     def elements(self) -> List[Element]:
         def for_unit(unit: Unit) -> List[Element]:
@@ -321,6 +388,8 @@ class Reaction:
         return "{} -> {}".format(reactants, products)
     def __repr__(self) -> str:
         return "Reaction({}, {})".format(self.reactants, self.products)
+    # def __hash__(self):
+    #     return hash(repr(self))
     @classmethod
     def from_str(cls, source: str) -> Reaction:
         return init_reaction_parser.parse(source)
@@ -357,6 +426,19 @@ class Reaction:
         product_coefficients = balanced_coefficients[len(self.reactants):]
         update_terms(self.reactants, reactant_coefficients)
         update_terms(self.products, product_coefficients)
+    def get_term(self, pattern: Node) -> Optional[Node]:
+        left = str(pattern.set_coefficient_pure(1))
+        for term in self.reactants:
+            right = str(term.set_coefficient_pure(1))
+            if left == right:
+                co = term.coefficient_safe() * Number(-1)
+                return term.set_coefficient_pure(co)
+        for term in self.products:
+            right = str(term.set_coefficient_pure(1))
+            if left == right:
+                return term
+        return None
+
 
 ###############################################################################
 # PARSER
@@ -459,16 +541,44 @@ class ThermochemicalEquation:
 def enthalpy_of_reaction(
     unknown_reaction: Reaction,
     known_reactions: List[ThermochemicalEquation],
-) -> None:
+) -> KiloJoulePerMol:
     all_reactions = (
         list(map(lambda x: x.reaction, known_reactions)) +
         [unknown_reaction]
     )
-    all_terms: Set[Node] = set()
+    all_terms: Set[str] = set()
     for reaction in all_reactions:
         for term in reaction.reactants + reaction.products:
-            all_terms.add(term)
-    pprint(all_terms)
+            all_terms.add(str(term.set_coefficient_pure(1)))
+    for x in all_terms:
+        assert x == str(Node.from_str(x))
+    def init_column(reaction: Reaction) -> List[Number]:
+        assert isinstance(reaction, Reaction)
+        column = []
+        for term_str in all_terms:
+            node = Node.from_str(term_str)
+            assert isinstance(node, Node)
+            term_opt = reaction.get_term(node)
+            if isinstance(term_opt, Node):
+                column.append(term_opt.coefficient_safe())
+            else:
+                column.append(0)
+        return column
+    def init_a():
+        rows = []
+        for reaction in list(map(lambda x: x.reaction, known_reactions)):
+            rows.append(init_column(reaction))
+        return Matrix(rows).transpose()
+    def init_b():
+        row = init_column(unknown_reaction)
+        return Matrix(row)
+    def init_deltas():
+        row = list(map(lambda x: x.enthalpy_change.value, known_reactions))
+        return Matrix(row).transpose()
+    path = init_a().solve(init_b())
+    enthalpy_answer = KiloJoulePerMol(path.dot(init_deltas()))
+    return enthalpy_answer
+    
 
 
 
@@ -491,7 +601,9 @@ def program(func):
 #         "C3H8 + O2 -> H2O + CO2"
 #     )
 #     reaction.balance()
-#     # print(str(reaction))
+#     print(str(reaction))
+
+# print(sys.getrecursionlimit())
 
 @program
 def dev2():
@@ -504,9 +616,8 @@ def dev2():
         KiloJoulePerMol(-566),
     )
     reaction3 = Reaction.from_str("2CH4(g) + 3O2(g) = 2CO(g) + 4H2O(l)")
-    enthalpy_of_reaction(
+    print(enthalpy_of_reaction(
         reaction3,
         [reaction1, reaction2]
-    )
-
+    ))
 
