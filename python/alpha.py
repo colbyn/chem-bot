@@ -680,48 +680,49 @@ def program(func):
 
 # print(sys.getrecursionlimit())
 
-# @program
-# def dev2():
-#     reaction1 = ThermochemicalEquation(
-#         Reaction.from_str("CH4(g) + 2O2(g) = CO2(g) + 2H2O(l)"),
-#         KiloJoulePerMol(-890),
-#     )
-#     reaction2 = ThermochemicalEquation(
-#         Reaction.from_str("2CO(g) + O2(g) = 2CO2(g)"),
-#         KiloJoulePerMol(-566),
-#     )
-#     reaction3 = Reaction.from_str("2CH4(g) + 3O2(g) = 2CO(g) + 4H2O(l)")
-#     print(enthalpy_of_reaction(
-#         reaction3,
-#         [reaction1, reaction2]
-#     ))
+@program
+def dev2():
+    reaction1 = ThermochemicalEquation(
+        Reaction.from_str("CH4(g) + 2O2(g) = CO2(g) + 2H2O(l)"),
+        KiloJoulePerMol(-890),
+    )
+    reaction2 = ThermochemicalEquation(
+        Reaction.from_str("2CO(g) + O2(g) = 2CO2(g)"),
+        KiloJoulePerMol(-566),
+    )
+    reaction3 = Reaction.from_str("2CH4(g) + 3O2(g) = 2CO(g) + 4H2O(l)")
+    print(enthalpy_of_reaction(
+        reaction3,
+        [reaction1, reaction2]
+    ))
 
 
 @program
 def dev3():
-    # reaction1 = ThermochemicalEquation(
-    #     Reaction.from_str(
-    #         "2C2H2(g) + 5O2(g) = 4CO2(g) + 2H2O(l)"
-    #     ),
-    #     KiloJoulePerMol(-2600.0),
-    # )
-    # reaction2 = ThermochemicalEquation(
-    #     Reaction.from_str(
-    #         "2C2H6(g) + 7O2(g) = 4CO2(g) + 6H2O(l)"
-    #     ),
-    #     KiloJoulePerMol(-3210.0),
-    # )
-    # reaction3 = ThermochemicalEquation(
-    #     Reaction.from_str(
-    #         "H2(g) + 1/2O2(g) = H2O(l)"
-    #     ),
-    #     KiloJoulePerMol(-286.0),
-    # )
-    # print(Node.from_str(
-    #     "1/2O2(g)"
-    # ))
-    print(Reaction.from_str(
-        "1/2O2(g) = 2H2O(l)"
-    ))
-    
+    reaction1 = ThermochemicalEquation(
+        Reaction.from_str(
+            "2C2H2(g) + 5O2(g) = 4CO2(g) + 2H2O(l)"
+        ),
+        KiloJoulePerMol(-2600.0),
+    )
+    reaction2 = ThermochemicalEquation(
+        Reaction.from_str(
+            "2C2H6(g) + 7O2(g) = 4CO2(g) + 6H2O(l)"
+        ),
+        KiloJoulePerMol(-3210.0),
+    )
+    reaction3 = ThermochemicalEquation(
+        Reaction.from_str(
+            "H2(g) + 1/2 O2(g) = H2O(l)"
+        ),
+        KiloJoulePerMol(-286.0),
+    )
+    reaction4 = Reaction.from_str(
+        "C2H2(g) + 2H2(g) = C2H6(g)"
+    )
+    answer = enthalpy_of_reaction(
+        reaction4,
+        [reaction1, reaction2, reaction3]
+    )
+    print(answer)
 
