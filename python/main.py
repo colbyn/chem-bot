@@ -321,38 +321,14 @@ class Node:
                 [return_node],
                 coefficient=new_coefficient
             ))
-    # @coefficient.setter
-    # def coefficient(self, new_value: Number):
-    #     if self.is_chunk():
-    #         return self.__coefficient
-    #     else:
-    #         raise RuntimeError('Invalid NodeType')
-    # @property
-    # def subscript(self) -> Optional[Number]:
-    #     valid_types: List[NodeType] = ['Parens', 'Unit']
-    #     if self.__node_type in valid_types:
-    #         assert self.coefficient != 0
-    #         return self.coefficient
-    #     return None
-    # @subscript.setter
-    # def subscript(self, new_value: Number):
-    #     if self.is_parens() or self.is_unit():
-    #         return self.__subscript
-    #     else:
-    #         raise RuntimeError('Invalid NodeType')
-    # @property
-    # def nodes(self) -> Optional[List[Node]]:
-    #     valid_types: List[NodeType] = ['Chunk', 'Parens']
-    #     if self.__node_type in valid_types:
-    #         assert isinstance(self.__payload, list)
-    #         return self.__payload
-    #     return None
-    # @property
-    # def element(self) -> Optional[Element]:
-    #     if self.is_unit():
-    #         assert isinstance(self.__payload, Element)
-    #         return self.__payload
-    #     return None
+    def nodes(self) -> Optional[List[Node]]:
+        if self.is_chunk():
+            assert isinstance(self.variant, Chunk)
+            return self.variant.payload
+        if self.is_parens():
+            assert isinstance(self.variant, Parens)
+            return self.variant.payload
+        return None
     def foreach(
         self,
         unit: Optional[Callable[[Unit], T]] = None,
@@ -383,13 +359,6 @@ class Node:
     def __str__(self):
         return self.variant.__str__()
     def __repr__(self) -> str:
-        # if self.is_unit():
-        #     return "Node({})".format(self.variant.__repr__())
-        # if self.is_parens():
-        #     return "Node({})".format(self.variant.__repr__())
-        # if self.is_chunk():
-        #     return "Node({})".format(self.variant.__repr__())
-        # raise SystemError()
         return self.variant.__repr__()
     def elements(self) -> List[Element]:
         def for_unit(unit: Unit) -> List[Element]:
@@ -500,6 +469,20 @@ class Reaction:
             if left == right:
                 return term
         return None
+    def is_balanced(self):
+        def process(terms: List[Node]):
+            results = {}
+            for term in terms:
+                for element in term.elements():
+                    if element in results:
+                        results[element] = results[element] + 1
+                    else:
+                        results[element] = 1
+            return results
+        left = process(self.reactants)
+        right = process(self.products)
+        pprint(left)
+        pprint(right)
 
 
 ###############################################################################
@@ -671,16 +654,15 @@ def program(func):
 ###############################################################################
 
 # @program
-# def dev1():
-#     reaction = Reaction.from_str(
-#         "C3H8 + O2 -> H2O + CO2"
-#     )
-#     reaction.balance()
-#     print(str(reaction))
+def dev1():
+    reaction = Reaction.from_str(
+        "C3H8 + O2 -> H2O + CO2"
+    )
+    reaction.balance()
+    print(str(reaction))
 
-# print(sys.getrecursionlimit())
 
-@program
+# @program
 def dev2():
     reaction1 = ThermochemicalEquation(
         Reaction.from_str("CH4(g) + 2O2(g) = CO2(g) + 2H2O(l)"),
@@ -697,7 +679,7 @@ def dev2():
     ))
 
 
-@program
+# @program
 def dev3():
     reaction1 = ThermochemicalEquation(
         Reaction.from_str(
@@ -726,3 +708,7 @@ def dev3():
     )
     print(answer)
 
+@program
+def dev4():
+    reaction = Reaction.from_str("C2 + H2O -> H2O + C")
+    print(reaction.is_balanced())
