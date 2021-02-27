@@ -578,7 +578,6 @@ def enthalpy_of_reaction(
     path = init_a().solve(init_b())
     enthalpy_answer = KiloJoulePerMol(path.dot(init_deltas()))
     return enthalpy_answer
-    
 
 
 
