@@ -481,8 +481,14 @@ class Reaction:
             return results
         left = process(self.reactants)
         right = process(self.products)
-        pprint(left)
-        pprint(right)
+        if set(left.keys()) != set(right.keys()):
+            return False
+        for key in left.keys():
+            left_count = left[key]
+            right_count = right[key]
+            if left_count != right_count:
+                return False
+        return True
 
 
 ###############################################################################
@@ -710,5 +716,5 @@ def dev3():
 
 @program
 def dev4():
-    reaction = Reaction.from_str("C2 + H2O -> H2O + C")
+    reaction = Reaction.from_str("C2 + H2O -> H2O")
     print(reaction.is_balanced())
