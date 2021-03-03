@@ -430,6 +430,7 @@ class Reaction:
             for atom in term.elements():
                 all_elements.add(atom.name)
         return all_elements
+    # TODO: support charge.
     def balance(self):
         all_elements: Set[str] = self.all_elements()
         rows = []
@@ -469,6 +470,7 @@ class Reaction:
             if left == right:
                 return term
         return None
+    # TODO: Check charge.
     def is_balanced(self):
         def process(terms: List[Node]):
             results: Dict[str, int] = {}
