@@ -6,5 +6,6 @@ pub mod ast;
 fn main() {
     // data::main();
     // parser::main();
-    ast::expr::main();
+    // ast::expr::main();
+    ast::funs::main();
 }

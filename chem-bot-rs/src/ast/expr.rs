@@ -7,6 +7,7 @@ use std::collections::{HashMap, LinkedList, HashSet};
 pub use num::rational::{Ratio, Rational};
 
 use crate::ast::value::{self, Value};
+use crate::{return_value_num, return_value};
 
 pub type Index = usize;
 pub type KeyWord = String;
@@ -53,24 +54,6 @@ impl FunCall {
 pub enum Expr {
     Value(Value),
     Call(Box<FunCall>),
-}
-
-macro_rules! return_value {
-    ($expr:expr) => {{
-        match $expr {
-            Expr::Value(x) => x,
-            x => return x,
-        }
-    }};
-}
-
-macro_rules! return_value_num {
-    ($expr:expr) => {{
-        match $expr {
-            Expr::Value(Value::Num(x)) => x,
-            x => return x,
-        }
-    }};
 }
 
 impl Expr {
