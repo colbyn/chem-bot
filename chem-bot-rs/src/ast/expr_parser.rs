@@ -24,9 +24,12 @@ use nom::{
     multi::separated_list0,
     Parser,
 };
+use num::{FromPrimitive, ToPrimitive, BigRational};
+
 use crate::ast::expr::*;
 use crate::ast::value::Value;
 use crate::parser_utils::{self, identifier, parens, ws};
+
 
 ///////////////////////////////////////////////////////////////////////////////
 // HELPERS
@@ -44,7 +47,7 @@ pub fn is_uppercase(chr: char) -> bool {
 
 pub fn parse_literal_number(
     source: &str
-) -> Result<(&str, Value), nom::Err<nom::error::Error<&str>>> {
+) -> Result<(&str, isize), nom::Err<nom::error::Error<&str>>> {
     let (source, mut subscript) = take_while1(|x: char| {
         match x {
             '0' => true,
@@ -61,7 +64,7 @@ pub fn parse_literal_number(
         }
     })(source)?;
     let value = subscript.parse::<isize>().unwrap();
-    Ok((source, Value::Num(value)))
+    Ok((source, value))
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -77,7 +80,7 @@ fn parse_ast(source: &str) -> Result<(&str, Expr), nom::Err<nom::error::Error<&s
 
 fn parse_literal(source: &str) -> Result<(&str, Expr), nom::Err<nom::error::Error<&str>>> {
     let (source, literal) = parse_literal_number(source)?;
-    let ast = Expr::Value(literal);
+    let ast = Expr::Num(BigRational::from_i64(literal as i64).unwrap());
     Ok((source, ast))
 }
 

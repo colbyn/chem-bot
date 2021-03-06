@@ -1,24 +1,5 @@
 //! Common macros.
 
-#[macro_export]
-macro_rules! return_value {
-    ($expr:expr) => {{
-        match $expr {
-            Expr::Value(x) => x,
-            x => return x,
-        }
-    }};
-}
-
-#[macro_export]
-macro_rules! return_value_num {
-    ($expr:expr) => {{
-        match $expr {
-            Expr::Value(Value::Num(x)) => x,
-            x => return x,
-        }
-    }};
-}
 
 #[macro_export]
 macro_rules! return_fun_call {

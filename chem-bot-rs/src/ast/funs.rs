@@ -5,7 +5,7 @@ use std::iter::FromIterator;
 use std::path::{Path, PathBuf};
 use std::convert::AsRef;
 use std::collections::{HashMap, LinkedList, HashSet, VecDeque};
-pub use num::rational::{Ratio, Rational};
+use num::{FromPrimitive, ToPrimitive, BigRational};
 
 use crate::ast::expr::{Expr, FunCall};
 use crate::ast::value::Value;
@@ -19,18 +19,10 @@ pub trait ConvertTo<T> {
     fn convert_to(&self) -> Option<T>;
 }
 
-impl ConvertTo<isize> for Expr {
-    fn convert_to(&self) -> Option<isize> {
+impl ConvertTo<BigRational> for Expr {
+    fn convert_to(&self) -> Option<BigRational> {
         match self {
-            Expr::Value(Value::Num(x)) => Some(*x),
-            _ => None,
-        }
-    }
-}
-impl ConvertTo<Value> for Expr {
-    fn convert_to(&self) -> Option<Value> {
-        match self {
-            Expr::Value(x) => Some(x.clone()),
+            Expr::Num(x) => Some(x.clone()),
             _ => None,
         }
     }
@@ -206,6 +198,44 @@ macro_rules! defintion {
 // FUNCTION DEFINITIONS
 ///////////////////////////////////////////////////////////////////////////////
 
+fn all_functions() -> Vec<FunctionDecl> {
+    let nm_decl = defintion!(
+        nm(argument value:BigRational) => {
+            Expr::Product(vec![
+                Expr::Num(value),
+                Expr::con("nm")
+            ])
+        }
+    );
+    let energy_photon_wavelength = defintion!(
+        energy => photon(keyword wavelength : Expr) => {{
+            let numerator = Expr::Product(vec![
+                Expr::con("c"),
+                Expr::con("h"),
+            ]);
+            let denominator = wavelength;
+            Expr::ratio(
+                numerator,
+                denominator,
+            )
+        }}
+    );
+    vec![
+        nm_decl,
+        energy_photon_wavelength,
+    ]
+}
+
+pub fn apply(expr: Expr) -> Expr {
+    all_functions()
+        .into_iter()
+        .fold(expr, |expr, f| {
+            match f.call(expr) {
+                Ok(x) => x,
+                Err(x) => x,
+            }
+        })
+}
 
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -215,32 +245,32 @@ macro_rules! defintion {
 pub fn main() {
     let expr = Expr::from_str("nm(250)").unwrap();
     let nm_decl = defintion!(
-        nm(argument value:isize) => {
-            Expr::Value(Value::product(&[
-                Value::num(value),
-                Value::con("nm")
-            ]))
+        nm(argument value:BigRational) => {
+            Expr::Product(vec![
+                Expr::Num(value),
+                Expr::con("nm")
+            ])
         }
     );
-    // let result = nm_decl.call(expr);
-    // println!("{:#?}", result);
-    // ------------------------------------------------------------------------
+    let result = nm_decl.call(expr);
+    println!("{:#?}", result);
+    // // ------------------------------------------------------------------------
     let expr = Expr::from_str("energy(photon(wavelength = nm(325)))").unwrap();
     let decl1 = defintion!(
-        energy => photon(keyword wavelength : Value) => {{
-            let numerator = Value::product(&[
-                Value::con("c"),
-                Value::con("h"),
+        energy => photon(keyword wavelength : Expr) => {{
+            let numerator = Expr::Product(vec![
+                Expr::con("c"),
+                Expr::con("h"),
             ]);
             let denominator = wavelength;
-            Expr::Value(Value::ratio(
+            Expr::ratio(
                 numerator,
                 denominator,
-            ))
+            )
         }}
     );
-    let result = decl1.call(expr);
-    println!("{:#?}", result);
+    // let result = decl1.call(expr);
+    // println!("{:#?}", result);
 }
 
 

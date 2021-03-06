@@ -4,20 +4,81 @@ use std::iter::FromIterator;
 use std::path::{Path, PathBuf};
 use std::convert::AsRef;
 use std::collections::{HashMap, LinkedList, HashSet};
-pub use num::rational::{Ratio, Rational};
+use num::{FromPrimitive, ToPrimitive, BigRational, BigInt, Signed};
 
-use crate::ast::value::{self, Value};
-use crate::{return_value_num, return_value};
+use crate::*;
 
 pub type Index = usize;
 pub type KeyWord = String;
 
+///////////////////////////////////////////////////////////////////////////////
+// INTERNAL UTILS
+///////////////////////////////////////////////////////////////////////////////
+
+fn for_each(
+    input: Vec<Expr>,
+    f: Rc<dyn Fn(Expr, Expr) -> (Expr, Expr)>,
+) -> Vec<Expr> {
+    let input_length = input.len();
+    let mut left = LinkedList::<Expr>::new();
+    let mut right = LinkedList::<Expr>::from_iter(input);
+    let mut current = right.pop_front().unwrap();
+    fn process(
+        left: &mut LinkedList<Expr>,
+        right: &mut LinkedList<Expr>,
+        current: &mut Expr,
+        f: Rc<dyn Fn(Expr, Expr) -> (Expr, Expr)>,
+    ) {
+        for l in left.iter_mut() {
+            let (new_l, new_current) = f(l.clone(), current.clone());
+            *l = new_l;
+            *current = new_current;
+        }
+        for r in right.iter_mut() {
+            let (new_r, new_current) = f(r.clone(), current.clone());
+            *r = new_r;
+            *current = new_current;
+        }
+    }
+    fn next(
+        left: &mut LinkedList<Expr>,
+        right: &mut LinkedList<Expr>,
+        current: &mut Expr,
+        f: Rc<dyn Fn(Expr, Expr) -> (Expr, Expr)>,
+    ) -> Option<()> {
+        process(
+            left,
+            right,
+            current,
+            f.clone(),
+        );
+        left.push_back(current.clone());
+        *current = right.pop_front()?;
+        Some(())
+    }
+    let mut done = false;
+    while !done {
+        done = next(
+            &mut left,
+            &mut right,
+            &mut current,
+            f.clone(),
+        ).is_none();
+    }
+    assert!(right.is_empty());
+    assert_eq!(left.len(), input_length);
+    // DONE
+    left
+        .into_iter()
+        .filter(|x| !x.is_multiplicative_identity())
+        .collect()
+}
 
 ///////////////////////////////////////////////////////////////////////////////
 // EXPRESSION AST (UNEVALUATED)
 ///////////////////////////////////////////////////////////////////////////////
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct FunCall {
     pub name: String,
     /// positional arguments.
@@ -26,37 +87,35 @@ pub struct FunCall {
     pub key_args: HashMap<String, Expr>,
 }
 
-impl FunCall {
-    pub fn to_value(self) -> Value {
-        match (self.name.as_str(), &self.pos_args[..]) {
-            ("nm", [value]) => Value::Product(vec![
-                value.clone().eval(),
-                Value::Var(self.name),
-            ]),
-            ("photon", []) if self.key_args.contains_key("wavelength") => {
-                unimplemented!()
-            }
-            ("photon", []) if self.key_args.contains_key("frequency") => {
-                unimplemented!()
-            }
-            ("mole", [value]) => Value::Product(vec![
-                unimplemented!()
-            ]),
-            ("energy", [argument]) => Value::Product(vec![
-                unimplemented!()
-            ]),
-            _ => unimplemented!()
-        }
-    }
-}
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Expr {
-    Value(Value),
+    Num(BigRational),
+    Con(String),
+    /// 1/x
+    Fraction(Box<Expr>),
+    Product(Vec<Expr>),
     Call(Box<FunCall>),
 }
 
 impl Expr {
+    pub fn int<T: Into<i64>>(x: T) -> Self {
+        let x = x.into();
+        Expr::Num(BigRational::from_i64(x).unwrap())
+    }
+    pub fn float<T: Into<f64>>(x: T) -> Self {
+        let x = x.into();
+        Expr::Num(BigRational::from_f64(x).unwrap())
+    }
+    pub fn con(x: &str) -> Self {Expr::Con(x.to_owned())}
+    pub fn ratio(numerator: Expr, denominator: Expr) -> Self {
+        Expr::Product(vec![
+            numerator,
+            Expr::Fraction(
+                Box::new(denominator),
+            )
+        ])
+    }
     pub fn from_file<P: AsRef<Path>>(path: P) -> Result<Expr, ()> {
         let path = path.as_ref();
         let source = std::fs::read_to_string(path).unwrap();
@@ -65,23 +124,62 @@ impl Expr {
     pub fn from_str(source: &str) -> Result<Expr, ()> {
         crate::ast::expr_parser::run_parser(source)
     }
-    pub fn unsafe_to_value(self) -> Value {
-        match self {
-            Expr::Value(x) => x,
-            _ => panic!()
+    fn from_vec(xs: Vec<Expr>) -> Option<Expr> {
+        let xs = xs
+            .into_iter()
+            .filter(|x| !x.is_multiplicative_identity())
+            .collect::<Vec<_>>();
+        match xs.len() {
+            0 => None,
+            1 => Some(xs[0].clone()),
+            _ => Some(Expr::Product(xs)),
         }
     }
-    pub fn eval(self) -> Value {
+    fn flatten(xs: Vec<Option<Expr>>) -> Option<Expr> {
+        let xs = xs
+            .into_iter()
+            .filter_map(|x| x)
+            .collect();
+        Expr::from_vec(xs)
+    }
+    pub fn is_num(&self) -> bool {
         match self {
-            Expr::Call(call) => {
-                unimplemented!()
-            }
-            Expr::Value(x) => x,
+            Expr::Num(_) => true,
+            _ => false
         }
+    }
+    pub fn unit_fraction(val: Expr) -> Expr {
+        // Expr::Fraction(Box::new(val))
+        val.reciprocal()
+    }
+    fn unpack_num(&self) -> Option<BigRational> {
+        match self {
+            Expr::Num(x) => Some(x.clone()),
+            _ => None
+        }
+    }
+    pub fn is_multiplicative_identity(&self) -> bool {
+        match self {
+            Expr::Num(x) => *x == BigRational::from_i32(1).unwrap(),
+            Expr::Con(_) => false,
+            Expr::Fraction(x) => x.is_multiplicative_identity(),
+            Expr::Product(xs) => xs.iter().all(|x| x.is_multiplicative_identity()),
+            Expr::Call(_) => false,
+        }
+    }
+    pub fn multiplicative_identity() -> Self {
+        Expr::Num(BigRational::from_i32(1).unwrap())
     }
     pub fn trans(self, f: Rc<dyn Fn(Expr) -> Expr>) -> Expr {
         let result = match self {
-            Expr::Value(x) => Expr::Value(x),
+            Expr::Num(x) => Expr::Num(x),
+            Expr::Con(x) => Expr::Con(x),
+            Expr::Fraction(x) => Expr::Fraction(Box::new(x.trans(f.clone()))),
+            Expr::Product(xs) => Expr::Product(
+                xs  .into_iter()
+                    .map(|x| x.trans(f.clone()))
+                    .collect::<Vec<_>>()
+            ),
             Expr::Call(call) => {
                 let pos_args = call.pos_args
                     .into_iter()
@@ -104,119 +202,391 @@ impl Expr {
         };
         f(result)
     }
-    pub fn trans_fun_wildcard(
-        self,
-        name: &str,
-        f: Rc<dyn Fn(FunCall) -> Expr>
-    ) -> Expr {
-        self.trans(Rc::new({
-            let name = name.to_owned();
-            move |expr| {
-                match expr {
-                    Expr::Call(fun_call) if fun_call.name == name => {
-                        f(*fun_call)
+    fn abs(self) -> Self {
+        self.trans(Rc::new(|value| match value {
+            Expr::Num(x) => Expr::Num(num::abs(x)),
+            x => x
+        }))
+    }
+    fn reciprocal(&self) -> Self {
+        match self {
+            Expr::Num(x) => {
+                let num = x.numer().clone();
+                let den = x.denom().clone();
+                Expr::Num(BigRational::new(den, num))
+            },
+            Expr::Con(x) => Expr::Fraction(Box::new(
+                Expr::Con(x.clone())
+            )),
+            Expr::Fraction(bot) => *bot.clone(),
+            Expr::Product(xs) => {
+                let xs = xs
+                    .into_iter()
+                    .map(Expr::reciprocal)
+                    .collect();
+                Expr::Product(xs)
+            }
+            Expr::Call(x) => Expr::Fraction(Box::new(
+                Expr::Call(x.clone())
+            )),
+        }
+    }
+    fn is_equal(&self, other: &Expr) -> bool {
+        fn match_xs_ys(xs: &[Expr], ys: &[Expr]) -> bool {
+            let xs = xs
+                .clone()
+                .into_iter()
+                .filter(|x| !x.is_multiplicative_identity())
+                .collect::<Vec<_>>();
+            let ys = ys
+                .clone()
+                .into_iter()
+                .filter(|x| !x.is_multiplicative_identity())
+                .collect::<Vec<_>>();
+            let mut unmacthed_xs = Vec::<Expr>::new();
+            let mut unmacthed_ys = Vec::<Expr>::new();
+            for x in xs.iter() {
+                let mut has_match = false;
+                for y in ys.iter() {
+                    if !has_match {
+                        has_match = x.is_equal(y);
                     }
-                    _ => expr
                 }
+                if !has_match {
+                    unmacthed_xs.push(x.to_owned().clone());
+                }
+            }
+            for y in ys.iter() {
+                let mut has_match = false;
+                for x in xs.iter() {
+                    if !has_match {
+                        has_match = y.is_equal(x);
+                    }
+                }
+                if !has_match {
+                    unmacthed_ys.push(y.to_owned().clone());
+                }
+            }
+            let result = unmacthed_xs.len() == 0 && unmacthed_ys.len() == 0;
+            // println!("is_equal {:?} == {:?} -> {:?}", xs, ys, result);
+            result
+        }
+        fn match_hashmap(xs: &HashMap<String, Expr>, ys: &HashMap<String, Expr>) -> bool {
+            let keys1 = xs
+                .keys()
+                .map(|x| x.clone())
+                .collect::<HashSet<_>>();
+            let keys2 = ys
+                .keys()
+                .map(|y| y.clone())
+                .collect::<HashSet<_>>();
+            if keys1 == keys2 {
+                let xs = xs.values().map(|x| x.clone()).collect::<Vec<_>>();
+                let ys = ys.values().map(|x| x.clone()).collect::<Vec<_>>();
+                return match_xs_ys(&xs, &ys)
+            }
+            false
+        }
+        match (self, other) {
+            (Expr::Num(x), Expr::Num(y)) => {x == y}
+            (Expr::Con(x), Expr::Con(y)) => {x == y}
+            (Expr::Fraction(x), Expr::Fraction(y)) => {x.is_equal(y)}
+            (Expr::Product(xs), Expr::Product(ys)) => match_xs_ys(xs, ys),
+            (Expr::Call(x), Expr::Call(y)) if x.name == y.name => {
+                let check2 = match_xs_ys(
+                    &x.pos_args,
+                    &y.pos_args,
+                );
+                let check3 = match_hashmap(
+                    &x.key_args,
+                    &y.key_args,
+                );
+                check2 && check3
+            }
+            // FALSE
+            (Expr::Num(_), _) => false,
+            (Expr::Con(_), _) => false,
+            (Expr::Fraction(_), _) => false,
+            (Expr::Product(_), _) => false,
+            (Expr::Call(_), _) => false,
+        }
+    }
+    fn hoist_products(self, sink: &mut Vec<Expr>) {
+        match self {
+            Expr::Num(x) => {
+                sink.push(Expr::Num(x));
+            }
+            Expr::Con(x) => {
+                sink.push(Expr::Con(x));
+            }
+            Expr::Fraction(bot) => {
+                let mut xs = Vec::new();
+                bot.hoist_products(&mut xs);
+                let xs = xs
+                    .into_iter()
+                    .map(|x| x.reciprocal())
+                    .collect::<Vec<_>>();
+                sink.extend(xs);
+            }
+            Expr::Product(xs) => {
+                for x in xs {
+                    x.hoist_products(sink)
+                }
+            }
+            Expr::Call(x) => {
+                sink.push(Expr::Call(x));
+            }
+        }
+    }
+    fn products(self) -> Vec<Self> {
+        let mut sink = Vec::new();
+        self.hoist_products(&mut sink);
+        sink
+    }
+    fn cancel_matching_factors(self) -> Option<Self> {
+        fn compute_gcd(left: BigRational, right: BigRational) -> BigInt {
+            use num::Integer;
+            let left_d = left.denom();
+            let right_d = right.denom();
+            left_d.gcd(right_d)
+        }
+        let factors = self.clone().products();
+        let result = for_each(
+            factors,
+            Rc::new(|left: Expr, right: Expr| -> (Expr, Expr) {
+                // CANCEL MATCHING FRACTIONS
+                if left.is_equal(&right.clone().reciprocal()) {
+                    return (
+                        Expr::multiplicative_identity(),
+                        Expr::multiplicative_identity(),
+                    )
+                }
+                // REDUCE INT FRACTIONS
+                use num::Integer;
+                // match (left.unpack_num(), right.clone().reciprocal().unpack_num()) {
+                //     (Some(left), Some(right)) => {
+                //         let gcd = compute_gcd(
+                //             num::abs(left.clone()),
+                //             num::abs(right.clone()),
+                //         );
+                //         let left_sign = num::signum(left.clone());
+                //         let right_sign = num::signum(right.clone());
+                //         let sign = left_sign * right_sign;
+                //         let left = (num::abs(left) / gcd.clone()) * sign;
+                //         let right = num::abs(right) / gcd;
+                //         return (
+                //             Expr::Num(left),
+                //             Expr::unit_fraction(Expr::Num(right)),
+                //         )
+                //     }
+                //     _ => ()
+                // }
+                match (left.unpack_num(), right.unpack_num()) {
+                    (Some(left), Some(right)) => {
+                        return (
+                            Expr::multiplicative_identity(),
+                            Expr::Num(left * right),
+                        )
+                    }
+                    _ => ()
+                }
+                match (left.clone().reciprocal().unpack_num(), right.clone().reciprocal().unpack_num()) {
+                    (Some(left), Some(right)) => {
+                        return (
+                            Expr::multiplicative_identity(),
+                            Expr::unit_fraction(
+                                Expr::Num(left * right)
+                            ),
+                        )
+                    }
+                    _ => ()
+                }
+                // DONE (NOTHING TO DO)
+                (left, right)
+            })
+        );
+        Expr::from_vec(result)
+    }
+    fn simplify_impl(self) -> Option<Self> {
+        match self {
+            Expr::Num(x) => Some(Expr::Num(x)),
+            Expr::Con(x) => Some(Expr::Con(x)),
+            Expr::Fraction(bot) => {
+                let bot = bot
+                    .simplify_impl()
+                    .and_then(Expr::cancel_matching_factors)
+                    .unwrap_or(Expr::multiplicative_identity());
+                let mut xs = Vec::<Expr>::new();
+                bot.hoist_products(&mut xs);
+                let xs = xs
+                    .into_iter()
+                    .map(|x| x.reciprocal())
+                    .collect::<Vec<_>>();
+                Expr::from_vec(xs)
+            }
+            Expr::Product(xs) => {
+                let xs = xs
+                    .into_iter()
+                    .filter_map(Expr::simplify_impl)
+                    .collect::<Vec<_>>();
+                Expr::Product(xs).cancel_matching_factors()
+            }
+            Expr::Call(call) => {
+                let pos_args = call.pos_args
+                    .into_iter()
+                    .map(|x| {
+                        x   .simplify_impl()
+                            .unwrap_or(Expr::multiplicative_identity())
+                    })
+                    .collect::<Vec<_>>();
+                let key_args = call.key_args
+                    .into_iter()
+                    .map(|(key, x)| {
+                        let x = x
+                            .simplify_impl()
+                            .unwrap_or(Expr::multiplicative_identity());
+                        (key, x)
+                    })
+                    .collect::<HashMap<_, _>>();
+                Some(Expr::Call(Box::new(FunCall {
+                    name: call.name,
+                    pos_args,
+                    key_args,
+                })))
+            }
+        }
+    }
+    fn simplify(self) -> Self {
+        self.simplify_impl().unwrap_or(Expr::multiplicative_identity())
+    }
+    pub fn expand_constants(self) -> Self {
+        // 10e-9
+        fn ten_to_neg_9() -> Expr {
+            Expr::ratio(
+                Expr::int(1),
+                Expr::int(1000000000)
+            )
+        }
+        fn speed_of_light() -> Expr {
+            Expr::ratio(
+                Expr::Product(vec![
+                    Expr::int(299792458),
+                    Expr::con("m"),
+                ]),
+                Expr::con("s")
+            )
+        }
+        fn nm() -> Expr {
+            Expr::Product(vec![
+                Expr::con("m"),
+                ten_to_neg_9(),
+            ])
+        }
+        fn planck_constant() -> Expr {
+            let x: f64 = 6.62607015 * (10.0f64.powi(-34));
+            Expr::Product(vec![
+                Expr::float(x),
+                Expr::con("J"),
+                Expr::con("s"),
+            ])
+        }
+        self.trans(Rc::new(|value| {
+            // println!("{:?}", value);
+            match value {
+                Expr::Con(x) if &x == "c" => speed_of_light(),
+                Expr::Con(x) if &x == "nm" => nm(),
+                Expr::Con(x) if &x == "h" => planck_constant(),
+                x => x
             }
         }))
     }
-    pub fn trans_fun(
-        self,
-        name: &str,
-        pos_arg: usize,
-        key_arg: Vec<String>,
-        f: Rc<dyn Fn(FunCall) -> Expr>
-    ) -> Expr {
-        self.trans_fun_wildcard(name, Rc::new({
-            let name = name.to_owned();
-            move |fun_call| {
-                let valid_name = fun_call.name == name;
-                let valid_pos_args = fun_call.pos_args.len() == pos_arg;
-                let valid_key_args = key_arg
+    pub fn to_string(&self) -> String {
+        match self {
+            Expr::Num(x) => {
+                fn run_basic(x: BigRational) -> Option<String> {
+                    let num = x.numer().to_isize()?;
+                    let den = x.denom().to_isize()?;
+                    let check = |x: isize| {
+                        format!("{}", x).len() < 3
+                    };
+                    if check(num) && check(den) {
+                        Some(format!("{}", x))
+                    } else {
+                        let x = x.to_f32()?;
+                        Some(format!("{:e}", x))
+                    }
+                }
+                run_basic(x.clone()).unwrap_or_else(|| {
+                    let x = x.to_f64().unwrap();
+                    format!("{:e}", x)
+                })
+            }
+            Expr::Con(x) => {
+                x.clone()
+            }
+            Expr::Fraction(bot) => {
+                format!("1/({})", bot.to_string())
+            }
+            Expr::Product(xs) => {
+                xs
                     .iter()
-                    .all(|key| {
-                        fun_call.key_args.contains_key(key)
-                    });
-                if valid_name && valid_pos_args && valid_key_args {
-                    f(fun_call)
-                } else {
-                    Expr::Call(Box::new(fun_call))
-                }
+                    .map(|x| x.to_string())
+                    .collect::<Vec<_>>()
+                    .join(" * ")
             }
-        }))
-    }
-    pub fn trans_fun_arg1(
-        self,
-        name: &str,
-        f: Rc<dyn Fn(Expr) -> Expr>
-    ) -> Expr {
-        self.trans_fun(
-            name,
-            1,
-            vec![],
-            Rc::new({
-                move |fun_call: FunCall| {
-                    let arg = fun_call.pos_args[0].clone();
-                    f(arg)
-                }
-            }),
-        )
-    }
-    pub fn trans_fun_key1(
-        self,
-        name: &str,
-        key_arg: &str,
-        f: Rc<dyn Fn(Expr) -> Expr>
-    ) -> Expr {
-        self.trans_fun(
-            name,
-            0,
-            vec![key_arg.clone().to_owned()],
-            Rc::new({
-                let key_arg = key_arg.to_owned();
-                move |fun_call: FunCall| {
-                    let key_arg = key_arg.clone();
-                    let arg = fun_call.key_args.get(&key_arg).unwrap();
-                    f(arg.clone())
-                }
-            }),
-        )
-    }
-    pub fn apply_rewrites(self) -> Self {
-        let pass = self;
-        let pass = pass.trans_fun_arg1(
-            "nm",
-            Rc::new(|arg: Expr| -> Expr {
-                let value: isize = return_value_num!(arg);
-                Expr::Value(Value::product(&[
-                    Value::num(value),
-                    Value::con("nm")
-                ]))
+            Expr::Call(call) => {
+                let pos_args = call.pos_args
+                    .iter()
+                    .map(|x| x.to_string())
+                    .collect::<Vec<_>>();
+                let key_args = call.key_args
+                    .iter()
+                    .map(|(key, x)| {
+                        let x = x.to_string();
+                        format!("{} = {}", key, x)
+                    })
+                    .collect::<Vec<_>>();
+                let args = vec![pos_args, key_args].concat().join(",");
+                format!(
+                    "{}({})",
+                    call.name,
+                    args,
+                )
             }
-        ));
-        let pass = pass.trans_fun_arg1(
-            "energy",
-            Rc::new(|arg: Expr| -> Expr {
-                arg.trans_fun_key1(
-                    "photon",
-                    "wavelength",
-                    Rc::new(|arg: Expr| -> Expr {
-                        let wavelength = return_value!(arg);
-                        let numerator = Value::product(&[
-                            Value::con("c"),
-                            Value::con("h"),
-                        ]);
-                        let denominator = wavelength;
-                        Expr::Value(Value::ratio(
-                            numerator,
-                            denominator,
-                        ))
-                    }
-                ))
+        }
+    }
+    // pub fn eval(self) -> Expr {
+    //     self.simplify()
+    //         .trans(Rc::new(crate::ast::funs::apply))
+    //         .expand_constants()
+    //         .simplify()
+    // }
+    pub fn eval(self) -> Self {
+        let mut done = false;
+        let mut state = self;
+        fn cycle(inpt: Expr) -> Expr {
+            // let f = Rc::new(|expr| match expr {
+            //     Expr::Num(x) => Expr::Float(x as f64),
+            //     Expr::Fraction(x) if x.is_float() => {
+            //         let x = x.unpack_float().unwrap();
+            //         Expr::Float(x.powi(-1))
+            //     }
+            //     x => x
+            // });
+            inpt.simplify()
+                .trans(Rc::new(crate::ast::funs::apply))
+                .expand_constants()
+                .simplify()
+        }
+        while !done {
+            let latest = cycle(state.clone());
+            if latest == state {
+                done = true;
             }
-        ));
-        pass
+            println!("{}", latest.to_string());
+            state = latest;
+        }
+        state
     }
 }
 
@@ -226,8 +596,7 @@ impl Expr {
 
 pub fn main() {
     let expr = Expr::from_str("energy(photon(wavelength = nm(325)))").unwrap();
-    let expr = expr.apply_rewrites();
-    let result = expr.unsafe_to_value().eval();
-    println!("{}", result.to_string());
+    let result = expr.clone().eval();
+    println!("{:#?}", result.to_string());
 }
 

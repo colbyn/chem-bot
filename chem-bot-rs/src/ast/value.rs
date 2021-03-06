@@ -4,7 +4,8 @@ use std::iter::FromIterator;
 use std::path::{Path, PathBuf};
 use std::convert::AsRef;
 use std::collections::{HashMap, LinkedList, HashSet};
-pub use num::rational::{Ratio, Rational};
+use num::{FromPrimitive, ToPrimitive, BigRational};
+
 
 ///////////////////////////////////////////////////////////////////////////////
 // HELPER TYPES
@@ -252,6 +253,7 @@ impl Value {
     fn abs(self) -> Self {
         self.map(Rc::new(|value| match value {
             Value::Num(x) => Value::Num(x.abs()),
+            Value::Float(x) => Value::Float(x.abs()),
             x => x
         }))
     }
