@@ -19,6 +19,66 @@ pub enum Either<L, R> {
     Right(R),
 }
 
+fn for_each(
+    input: Vec<Value>,
+    f: Rc<dyn Fn(Value, Value) -> (Value, Value)>,
+) -> Vec<Value> {
+    let input_length = input.len();
+    let mut left = LinkedList::<Value>::new();
+    let mut right = LinkedList::<Value>::from_iter(input);
+    let mut current = right.pop_front().unwrap();
+    fn process(
+        left: &mut LinkedList<Value>,
+        right: &mut LinkedList<Value>,
+        current: &mut Value,
+        f: Rc<dyn Fn(Value, Value) -> (Value, Value)>,
+    ) {
+        for l in left.iter_mut() {
+            let (new_l, new_current) = f(l.clone(), current.clone());
+            *l = new_l;
+            *current = new_current;
+        }
+        for r in right.iter_mut() {
+            let (new_r, new_current) = f(r.clone(), current.clone());
+            *r = new_r;
+            *current = new_current;
+        }
+    }
+    fn next(
+        left: &mut LinkedList<Value>,
+        right: &mut LinkedList<Value>,
+        current: &mut Value,
+        f: Rc<dyn Fn(Value, Value) -> (Value, Value)>,
+    ) -> Option<()> {
+        process(
+            left,
+            right,
+            current,
+            f.clone(),
+        );
+        left.push_back(current.clone());
+        *current = right.pop_front()?;
+        Some(())
+    }
+    let mut done = false;
+    while !done {
+        done = next(
+            &mut left,
+            &mut right,
+            &mut current,
+            f.clone(),
+        ).is_none();
+    }
+    assert!(right.is_empty());
+    assert_eq!(left.len(), input_length);
+    // DONE
+    left
+        .into_iter()
+        .filter(|x| !x.is_multiplicative_identity())
+        .collect()
+}
+
+
 ///////////////////////////////////////////////////////////////////////////////
 // VALUE AST
 ///////////////////////////////////////////////////////////////////////////////
@@ -27,21 +87,45 @@ pub enum Either<L, R> {
 pub enum Value {
     Num(isize),
     Var(String),
-    Fraction(Box<Value>, Box<Value>),
+    /// 1/x
+    Fraction(Box<Value>),
     Product(Vec<Value>),
 }
 
 impl Value {
     fn num(x: isize) -> Self {Value::Num(x)}
     fn var(x: &str) -> Self {Value::Var(x.to_owned())}
-    fn fraction(left: Value, right: Value) -> Self {
-        Value::Fraction(
-            Box::new(left),
-            Box::new(right),
-        )
+    fn ratio(numerator: Value, denominator: Value) -> Self {
+        Value::Product(vec![
+            numerator,
+            Value::Fraction(
+                Box::new(denominator),
+            )
+        ])
+    }
+    fn unit_fraction(denominator: Value) -> Self {
+        Value::Fraction(Box::new(denominator))
     }
     fn product(xs: &[Value]) -> Self {
         Value::Product(xs.to_owned())
+    }
+    fn from_vec(xs: Vec<Value>) -> Option<Value> {
+        let xs = xs
+            .into_iter()
+            .filter(|x| !x.is_multiplicative_identity())
+            .collect::<Vec<_>>();
+        match xs.len() {
+            0 => None,
+            1 => Some(xs[0].clone()),
+            _ => Some(Value::Product(xs)),
+        }
+    }
+    fn flatten(xs: Vec<Option<Value>>) -> Option<Value> {
+        let xs = xs
+            .into_iter()
+            .filter_map(|x| x)
+            .collect();
+        Value::from_vec(xs)
     }
     fn is_num(&self) -> bool {
         match self {
@@ -64,9 +148,9 @@ impl Value {
             _ => None
         }
     }
-    fn unpack_fraction(self) -> Option<(Box<Value>, Box<Value>)> {
+    fn unpack_fraction(self) -> Option<Value> {
         match self {
-            Value::Fraction(xs, ys) => Some((xs, ys)),
+            Value::Fraction(ys) => Some((*ys)),
             _ => None
         }
     }
@@ -76,25 +160,11 @@ impl Value {
             _ => Vec::new()
         }
     }
-    fn type_factors(&self) -> HashSet<String> {
-        match self {
-            Value::Num(x) => {
-                HashSet::default()
-            }
-            Value::Var(x) => {
-                HashSet::from_iter(vec![x.clone()])
-            }
-            Value::Fraction(top, bot) => top.type_factors(),
-            Value::Product(xs) => {
-                xs.iter().flat_map(|x| x.type_factors()).collect::<HashSet<_>>()
-            }
-        }
-    }
     fn is_equal_to(&self, other: &Value) -> bool {
         match (self, other) {
             (Value::Num(x), Value::Num(y)) => x == y,
             (Value::Var(x), Value::Var(y)) => x == y,
-            (Value::Fraction(xn, xd), Value::Fraction(yn, yd)) => {
+            (Value::Fraction(x), Value::Fraction(y)) => {
                 unimplemented!()
             }
             (Value::Product(xs), Value::Product(ys)) => {
@@ -109,8 +179,7 @@ impl Value {
                 *x == 1
             }
             Value::Var(x) => false,
-            Value::Fraction(top, bot) => {
-                top.is_multiplicative_identity() &&
+            Value::Fraction(bot) => {
                 bot.is_multiplicative_identity()
             }
             Value::Product(xs) => {
@@ -122,24 +191,15 @@ impl Value {
         match self {
             Value::Num(x) => f(Value::Num(x)),
             Value::Var(x) => f(Value::Var(x)),
-            Value::Fraction(top, bot) => {
-                let top = f(*top);
+            Value::Fraction(bot) => {
                 let bot = f(*bot);
-                let result = match (top, bot) {
-                    (Some(top), Some(bot)) => {
+                let result = match (bot) {
+                    (Some(bot)) => {
                         Some(Value::Fraction(
-                            Box::new(top),
                             Box::new(bot),
                         ))
                     }
-                    (Some(top), None) => Some(top),
-                    (None, Some(bot)) => {
-                        Some(Value::Fraction(
-                            Box::new(Value::num(1)),
-                            Box::new(bot),
-                        ))
-                    }
-                    (None, None) => None,
+                    (None) => None,
                 };
                 f(result?)
             }
@@ -184,9 +244,8 @@ impl Value {
                     ])
                 }
             }
-            Value::Fraction(top, bot) => {
+            Value::Fraction(bot) => {
                 Value::Fraction(
-                    Box::new(top.multiply(value)),
                     bot,
                 )
             }
@@ -201,22 +260,18 @@ impl Value {
         if values.is_empty() {
             return self
         }
-        match self {
-            Value::Fraction(top, bot) if top.is_multiplicative_identity() => {
-                // values.push(Value::Fraction(
-                //     Box::new(Value::num(1)),
-                //     bot,
-                // ));
-                unimplemented!();
-                Value::Product(values)
+        if self.is_multiplicative_identity() {
+            return match values.len() {
+                0 => Value::multiplicative_identity(),
+                1 => values[0].clone(),
+                _ => Value::Product(values)
             }
-            Value::Fraction(top, bot) => {
-                values.push(*top);
-                // values.push(Value::Fraction(
-                //     Box::new(),
-                //     bot,
-                // ));
-                unimplemented!();
+        }
+        match self {
+            Value::Fraction(bot) => {
+                values.push(Value::Fraction(
+                    bot,
+                ));
                 Value::Product(values)
             }
             Value::Product(xs) => {
@@ -233,157 +288,58 @@ impl Value {
             }
         }
     }
-    /// Consider `None` as the multiplicative identity.
-    fn cancel_factor(self, factor: &mut Option<Value>) -> Option<Self> {
-        if factor.is_none() {
-            return Some(self)
-        }
-        match (self, factor.as_mut().unwrap()) {
+    fn is_equal(&self, other: &Value) -> bool {
+        match (self, other) {
             (Value::Num(x), Value::Num(y)) => {
-                // CHECK 1: REDUCE EQUAL VALUES & SIGNS
-                let x_sign = x.signum();
-                let y_sign = y.signum();
-                if x.abs() == (*y).abs() {
-                    *factor = None;
-                    let result_sign = x_sign * y_sign;
-                    if result_sign != 1 {
-                        return Some(Value::Num(result_sign))
-                    }
-                    return None
-                }
-                // CHECK 2 GCD
-                let gcd = num::integer::gcd(
-                    x,
-                    *y,
-                );
-                let x = x / gcd;
-                *y = *y / gcd;
-                // DONE
-                return Some(Value::Num(x))
+                x == y
             }
             (Value::Var(x), Value::Var(y)) => {
-                if x == *y {
-                    *factor = None;
-                    return None
-                }
-                return Some(Value::Var(x))
+                x == y
             }
-            (Value::Fraction(xn, xd), Value::Fraction(yn, yd)) => {
-                let mut yn = Some(*yn.clone());
-                let mut yd = Some(*yd.clone());
-                let xn = xn.cancel_factor(&mut yd);
-                let xd = xd.cancel_factor(&mut yn);
-                match (yn, yd) {
-                    (Some(yn), Some(yd)) => {
-                        *factor = Some(Value::Fraction(
-                            Box::new(yn.clone()),
-                            Box::new(yd.clone()),
-                        ));
-                    }
-                    (Some(yn), None) => {
-                        *factor = Some(yn.clone());
-                    }
-                    (None, Some(yd)) => {
-                        *factor = Some(Value::Fraction(
-                            Box::new(Value::multiplicative_identity()),
-                            Box::new(yd.clone()),
-                        ));
-                    }
-                    (None, None) => {
-                        *factor = None;
-                    }
-                }
-                match (xn, xd) {
-                    (Some(xn), Some(xd)) => {
-                        Some(Value::Fraction(
-                            Box::new(xn.clone()),
-                            Box::new(xd.clone()),
-                        ))
-                    }
-                    (Some(xn), None) => {
-                        Some(xn.clone())
-                    }
-                    (None, Some(xd)) => {
-                        Some(Value::Fraction(
-                            Box::new(Value::multiplicative_identity()),
-                            Box::new(xd.clone()),
-                        ))
-                    }
-                    (None, None) => {
-                        None
-                    }
-                }
+            (Value::Fraction(x), Value::Fraction(y)) => {
+                x.is_equal(y)
             }
-            (Value::Fraction(xn, xd), y) => {
-                let mut y = Some(y.clone());
-                let xn = xn.cancel_factor(&mut y);
-                *factor = y.clone();
-                match xn {
-                    Some(xn) => Some(Value::Fraction(
-                        Box::new(xn),
-                        xd,
-                    )),
-                    None => Some(Value::Fraction(
-                        Box::new(Value::multiplicative_identity()),
-                        xd,
-                    )),
-                }
-            }
-            (Value::Product(xs), _) => {
-                let mut rs = Vec::<Value>::new();
-                for x in xs {
-                    if factor.is_some() {
-                        match x.cancel_factor(factor) {
-                            Some(x) => {
-                                rs.push(x);
-                            }
-                            None => {}
-                        }
-                    } else {
-                        rs.push(x);
-                    }
-                }
-                if rs.is_empty() {
-                    return None
-                }
-                if rs.len() == 1 {
-                    return Some(rs[0].clone())
-                }
-                Some(Value::Product(rs))
-            }
-            (mut x, Value::Product(ys)) => {
-                let mut x = Some(x);
-                let mut ys = ys
+            (Value::Product(xs), Value::Product(ys)) => {
+                let xs = xs
+                    .clone()
                     .into_iter()
-                    .map(|a| Some(a.clone()))
+                    .filter(|x| !x.is_multiplicative_identity())
                     .collect::<Vec<_>>();
-                for y in ys.iter_mut() {
-                    if let Some(x_val) = x {
-                        x = x_val.cancel_factor(y);
-                    }
-                }
                 let ys = ys
+                    .clone()
                     .into_iter()
-                    .filter_map(|x| x)
+                    .filter(|x| !x.is_multiplicative_identity())
                     .collect::<Vec<_>>();
-                if ys.is_empty() {
-                    *factor = None;
-                } else if ys.len() == 1 {
-                    *factor = Some(ys[0].clone());
-                } else {
-                    *factor = Some(Value::Product(ys.clone()));
+                let mut unmacthed_xs = Vec::<Value>::new();
+                let mut unmacthed_ys = Vec::<Value>::new();
+                for x in xs.iter() {
+                    let mut has_match = false;
+                    for y in ys.iter() {
+                        if !has_match {
+                            has_match = x.is_equal(y);
+                            // println!("{:?} ~ {:?} -> {:?}", x, y, x.is_equal(y));
+                        }
+                    }
+                    if !has_match {
+                        unmacthed_xs.push(x.clone());
+                    }
                 }
-                x.clone()
+                for y in ys.iter() {
+                    let mut has_match = false;
+                    for x in xs.iter() {
+                        if !has_match {
+                            has_match = y.is_equal(x);
+                        }
+                    }
+                    if !has_match {
+                        unmacthed_ys.push(y.clone());
+                    }
+                }
+                let result = unmacthed_xs.len() == 0 && unmacthed_ys.len() == 0;
+                println!("is_equal {:?} == {:?} -> {:?}", xs, ys, result);
+                result
             }
-            (Value::Num(x), Value::Var(_)) => Some(Value::Num(x)),
-            (Value::Var(x), Value::Num(_)) => Some(Value::Var(x)),
-            (Value::Num(1), Value::Product(_)) => Some(Value::Num(1)),
-            (Value::Num(1), Value::Fraction(_, _)) => Some(Value::Num(1)),
-            (left, right) => unimplemented!(
-                "{:?} {:?}",
-                left,
-                right,
-            )
+            _ => false
         }
     }
     fn negate(self) -> Self {
@@ -391,9 +347,9 @@ impl Value {
     }
     fn reciprocal(self) -> Self {
         match self {
-            Value::Num(x) => Value::Num(x),
-            Value::Var(x) => Value::Var(x),
-            Value::Fraction(top, bot) => Value::Fraction(bot, top),
+            Value::Num(x) => Value::unit_fraction(Value::Num(x)),
+            Value::Var(x) => Value::unit_fraction(Value::Var(x)),
+            Value::Fraction(bot) => *bot,
             Value::Product(xs) => {
                 let xs = xs
                     .into_iter()
@@ -403,122 +359,70 @@ impl Value {
             }
         }
     }
-    fn hoist_fractions(self, sink: &mut Vec<Value>) -> Option<Value> {
+    /// Fractions and multiples.
+    fn hoist_products(self, sink: &mut Vec<Value>) -> Option<Value> {
         match self {
             Value::Num(x) => Some(Value::Num(x)),
             Value::Var(x) => Some(Value::Var(x)),
-            Value::Fraction(top, bot) => {
+            Value::Fraction(bot) => {
                 let mut bot_sink = Vec::new();
-                let bot = bot.hoist_fractions(&mut bot_sink);
-                let top = top.hoist_fractions(sink);
+                if let Some(bot) = bot.hoist_products(&mut bot_sink) {
+                    bot_sink.push(bot);
+                }
                 let bot_sink = bot_sink
                     .into_iter()
-                    .map(Value::reciprocal)
+                    .map(|x| x.reciprocal())
                     .collect::<Vec<_>>();
                 sink.extend(bot_sink);
-                match (top, bot) {
-                    (Some(top), None) => Some(top),
-                    (None, None) => None,
-                    (Some(top), Some(bot)) => {
-                        Some(Value::Fraction(
-                            Box::new(top),
-                            Box::new(bot),
-                        ))
-                    }
-                    (None, Some(bot)) => {
-                        Some(Value::Fraction(
-                            Box::new(unimplemented!()),
-                            Box::new(bot),
-                        ))
-                    }
-                }
+                None
             }
             Value::Product(xs) => {
-                let mut rs = Vec::new();
                 for x in xs {
-                    match x.hoist_fractions(sink) {
-                        Some(Value::Fraction(top, bot)) => {
-                            sink.push(Value::Fraction(top, bot));
-                        }
+                    match x.hoist_products(sink) {
                         Some(x) => {
-                            rs.push(x);
+                            sink.push(x);
                         }
                         None => {}
                     }
                 }
-                match rs.len() {
-                    0 => None,
-                    1 => Some(rs[0].clone()),
-                    _ => Some(Value::Product(rs)),
-                }
+                None
             }
         }
+    }
+    fn products(self) -> Vec<Self> {
+        let mut sink = Vec::new();
+        if let Some(rest) = self.hoist_products(&mut sink) {
+            sink.push(rest);
+        }
+        sink
+    }
+    fn cancel_matching_factors(self) -> Option<Self> {
+        let factors = self.clone().products();
+        let result = for_each(
+            factors,
+            Rc::new(|left: Value, right: Value| -> (Value, Value) {
+                if left.is_equal(&right.clone().reciprocal()) {
+                    return (
+                        Value::multiplicative_identity(),
+                        Value::multiplicative_identity(),
+                    )
+                }
+                (left, right)
+            })
+        );
+        Value::from_vec(result)
     }
     fn simplify_impl(self) -> Option<Self> {
         match self {
             Value::Num(x) => Some(Value::Num(x)),
             Value::Var(x) => Some(Value::Var(x)),
-            Value::Fraction(top, bot) => {
-                let mut top_sink = Vec::new();
-                let mut bot_sink = Vec::new();
-                let top = top
-                    .hoist_fractions(&mut top_sink)
-                    .and_then(Value::simplify_impl)
-                    .unwrap_or_else(|| unimplemented!());
-                let mut bot = bot
-                    .hoist_fractions(&mut bot_sink)
-                    .and_then(Value::simplify_impl);
-                let bot_sink = bot_sink
-                    .into_iter()
-                    .map(Value::reciprocal)
-                    .collect::<Vec<_>>();
-                let top = top.cancel_factor(&mut bot);
-                let sink = vec![top_sink, bot_sink].concat();
-                let sink = sink
-                    .into_iter()
-                    .filter(|x| !x.is_multiplicative_identity())
-                    .collect::<Vec<_>>();
-                match (top, bot) {
-                    (Some(top), None) if top.is_multiplicative_identity() => {
-                        Value::Product(sink).simplify_impl()
-                    }
-                    (Some(top), None) => {
-                        Some(top.add_product(sink))
-                    }
-                    (Some(top), Some(bot)) if bot.is_multiplicative_identity() => {
-                        Some(top.add_product(sink))
-                    }
-                    (Some(top), Some(bot)) if bot.clone().abs().is_multiplicative_identity() => {
-                        Some(top.negate().add_product(sink))
-                    }
-                    (Some(top), Some(bot)) => {
-                        let result = Value::Fraction(
-                            Box::new(top),
-                            Box::new(bot),
-                        );
-                        Some(result.add_product(sink))
-                    }
-                    (None, Some(bot)) => {
-                        let result = Value::Fraction(
-                            Box::new(unimplemented!()),
-                            Box::new(bot),
-                        );
-                        Some(result.add_product(sink))
-                    }
-                    (None, None) => None,
-                }
+            Value::Fraction(bot) => {
+                bot
+                    .cancel_matching_factors()
+                    .map(|x| x.reciprocal())
             }
             Value::Product(xs) => {
-                let xs = xs
-                    .into_iter()
-                    .filter_map(Value::simplify_impl)
-                    .filter(|x| !x.is_multiplicative_identity())
-                    .collect::<Vec<_>>();
-                match xs.len() {
-                    0 => None,
-                    1 => Some(xs[0].clone()),
-                    _ => Some(Value::Product(xs)),
-                }
+                Value::Product(xs).cancel_matching_factors()
             }
         }
     }
@@ -581,9 +485,9 @@ impl Literal {
                 if den == -1 {
                     return Value::Num(num * -1)
                 }
-                Value::Fraction(
-                    Box::new(Value::Num(num)),
-                    Box::new(Value::Num(den)),
+                Value::ratio(
+                    Value::Num(num),
+                    Value::Num(den),
                 )
             }
         }
@@ -619,39 +523,92 @@ impl Expr {
 // DEV
 ///////////////////////////////////////////////////////////////////////////////
 
-pub fn main() {
-    let value = Value::Fraction(
-        Box::new(Value::Product(vec![
-            Value::Num(100),
-            Value::Var(String::from("nm")),
-            Value::Var(String::from("a")),
-        ])),
-        Box::new(Value::Product(vec![
-            Value::Num(-100),
-            Value::Var(String::from("nm")),
-            Value::Var(String::from("b")),
-        ])),
-    );
-    let value = Value::Fraction(
-        Box::new(Value::Product(vec![
-            Value::Var(String::from("a")),
-        ])),
-        Box::new(Value::Product(vec![
-            Value::Fraction(
-                Box::new(Value::Product(vec![
-                    Value::Var(String::from("a")),
-                ])),
-                Box::new(Value::Product(vec![
-                    Value::Var(String::from("b")),
-                ])),
-            )
-        ])),
-    );
-    // let mut sink = Vec::<Value>::new();
-    // let value = value.hoist_fractions(&mut sink);
-    println!("{:#?}", value.simplify());
-    println!("-----------------------------------");
-    // println!("{:#?}", sink);
-}
+// pub fn main() {
+//     let value = Value::ratio(
+//         (Value::Product(vec![
+//             Value::Num(100),
+//             Value::Var(String::from("nm")),
+//             Value::Var(String::from("a")),
+//         ])),
+//         (Value::Product(vec![
+//             Value::Num(-100),
+//             Value::Var(String::from("nm")),
+//             Value::Var(String::from("b")),
+//         ])),
+//     );
+//     let value = Value::ratio(
+//         Value::Product(vec![
+//             Value::Var(String::from("a")),
+//         ]),
+//         Value::ratio(
+//             Value::Product(vec![
+//                 Value::Var(String::from("a")),
+//             ]),
+//             Value::Product(vec![
+//                 Value::Var(String::from("b")),
+//             ]),
+//         )
+//     );
+//     // let mut sink = Vec::<Value>::new();
+//     // let value = value.hoist_products(&mut sink);
+//     let value = value.simplify();
+//     println!("-----------------------------------");
+//     println!("{:#?}", value);
+//     // println!("{:#?}", sink);
+// }
 
+pub fn main() {
+    // let left = Value::product(&[
+    //     Value::var("a"),
+    //     Value::var("b"),
+    //     Value::var("c"),
+    // ]);
+    // let mut right = Value::unit_fraction(Value::product(&[
+    //     Value::var("a"),
+    //     Value::var("b"),
+    //     Value::var("d"),
+    // ]));
+    // let result = left.cancel_matching_factors(right);
+    // println!("-----------------------------------");
+    // println!("result: {:#?}", result);
+    // // println!("factor: {:#?}", right);
+    // let values = vec![
+    //     Value::var("a"),
+    //     Value::var("b"),
+    //     Value::var("c"),
+    //     Value::var("d"),
+    //     Value::unit_fraction(Value::var("a")),
+    //     Value::unit_fraction(Value::var("b")),
+    //     Value::unit_fraction(Value::var("c")),
+    // ];
+    // let value = Value::Product(values);
+    let value = Value::ratio(
+        Value::Product(vec![
+            Value::Var(String::from("a")),
+            Value::Var(String::from("c")),
+            Value::num(-25),
+        ]),
+        Value::product(&[
+            Value::num(100),
+            Value::ratio(
+                Value::Product(vec![
+                    Value::Var(String::from("a")),
+                ]),
+                Value::Product(vec![
+                    Value::Var(String::from("b")),
+                ]),
+            )
+        ])
+    );
+    let result = value.simplify();
+    // let results = for_each(values, Rc::new(|left: Value, right: Value| {
+    //     // println!("{:?}   <->   {:?}", left, right);
+    //     let (left, right) = left.cancel_matching_factors(right);
+    //     let left = left.unwrap_or(Value::multiplicative_identity());
+    //     let right = right.unwrap_or(Value::multiplicative_identity());
+    //     (left, right)
+    // }));
+    println!("^^^^^^^^^^^^^^^^^^^^^");
+    println!("main result: {:#?}", result);
+}
 

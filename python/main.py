@@ -646,6 +646,163 @@ def enthalpy_of_reaction(
     enthalpy_answer = KiloJoulePerMol(path.dot(init_deltas()))
     return enthalpy_answer
 
+###############################################################################
+# QUANTUM UTILS
+###############################################################################
+
+AVOGADRO_CONSTANT = 6.0226e23
+
+class Hertz:
+    '''
+    The hertz (symbol: Hz) is the derived unit of frequency in the International
+    System of Units (SI) and is defined as one cycle per second.
+
+    Some of the unit's most common uses are in the description of sine waves
+    and musical tones, particularly those used in radio- and audio-related
+    applications. It is also used to describe the clock speeds at which computers
+    and other electronics are driven. The units are sometimes also used as a
+    representation of energy, via the photon energy equation (E=hν), with one
+    hertz equivalent to h joules.
+
+    NOTE: The SI base unit is `s^(-1)`
+    
+    Source: https://en.wikipedia.org/wiki/Hertz
+    '''
+    def __init__(self, value: Number):
+        self.value = value
+    @staticmethod
+    def Gigahertz(value: Number) -> Hertz:
+        conversion_factor = 1e9
+        return Hertz(value * conversion_factor)
+    def __str__(self):
+        return "{} ㎐".format(self.value)
+
+class Joule:
+    def __init__(self, value: Number):
+        self.value = value
+    def __str__(self):
+        return "{} J".format(self.value)
+
+class JouleSecond:
+    '''
+    The joule-second (symbol J⋅s or J s) is the product of an SI derived unit,
+    the joule (J), and an SI base unit, the second (s).[1] The joule-second is
+    a unit of action or of angular momentum. The joule-second also appears in
+    quantum mechanics within the definition of Planck's constant.
+
+    **The joule-second should not be confused with the physical process of joules
+    per second (J/s).**
+
+    Joules per second: In physical processes, when the unit of time appears in
+    the denominator of a ratio, the described process occurs at a rate. For
+    example, in discussions about speed, an object like a car travels a known
+    distance of kilometers spread over a known number of seconds, and the car’s
+    rate of speed becomes kilometers per second (km/s). In physics, work per time
+    describes a system’s power; defined by the unit watt (W), which is joule per
+    second (J/s).
+
+    joules-second: To understand joules x second (J⋅s) we can imagine the
+    operator of an energy storage facility quoting a price for storing energy.
+    Storing 10,000 joules for 400 seconds would cost a certain amount. Storing
+    double the energy for half the time would use the same resources, and cost
+    the same.
+
+    Source: https://en.wikipedia.org/wiki/Joule-second
+    '''
+    def __init__(self, value: Number):
+        self.value = value
+    def __str__(self):
+        return "{} Js".format(self.value)
+    @staticmethod
+    def planck_constant() -> JouleSecond:
+        constant=6.62607015 * (10 ** (-34))
+        return JouleSecond(constant)
+    
+    def mul_meter_per_sec(self, other: MeterPerSec) -> JouleMeter:
+        assert isinstance(other, MeterPerSec)
+        new_value = self.value * other.value
+        return JouleMeter(new_value)
+    
+    def mul_herts(self, other: Hertz) -> Joule:
+        '''
+        Since `1㎐ = 1/s`, the seconds (s) cancels out.
+        '''
+        assert isinstance(other, Hertz)
+        new_value = self.value * other.value
+        return Joule(new_value)
+
+class JouleMeter:
+    '''
+    The joule-meter (Jm) is the product the joule (J) and meter (m).
+    '''
+    def __init__(self, value: Number):
+        self.value = value
+    def div_meter(self, other: Meter) -> Joule:
+        assert isinstance(other, Meter)
+        new_value = self.value / other.value
+        return Joule(new_value)
+
+
+class MeterPerSec:
+    '''
+    The metre per second (㎧) is an SI derived unit of both speed (scalar quantity)
+    and velocity (vector quantity (which have direction and magnitude)), equal
+    to the speed of a body covering a distance of one metre in a time of one
+    second.
+    
+    The SI unit symbols are `m/s`, `m·s−1`, `m s^(−1)`, or `m/s`,sometimes
+    (unofficially) abbreviated as mps.
+    '''
+    def __init__(self, value: Number):
+        self.value = value
+    def __str__(self):
+        return "{}㎧".format(self.value)
+    @staticmethod
+    def speed_of_light() -> MeterPerSec:
+        constant=299792458
+        return MeterPerSec(constant)
+    def mul_joule_sec(self, other: JouleSecond) -> JouleMeter:
+        assert isinstance(other, JouleSecond)
+        new_value = self.value * other.value
+        return JouleMeter(new_value)
+
+
+class Meter:
+    def __init__(self, value: Number):
+        self.value = value
+    @staticmethod
+    def NanoMeter(value: Number) -> Meter:
+        in_meters: Number = value * (10**(-9))
+        return Meter(in_meters)
+    def __str__(self):
+        return "{} m".format(self.value)
+
+def photon_energy_from_frequency(frequency: Hertz) -> Joule:
+    '''
+    Formula: `E = h * v` where `h` is planck's constant, and `v` is frequency (in hertz).
+    NOTE: Since `1㎐ = 1/s`, the seconds (s) cancels out.
+    '''
+    assert isinstance(frequency, Hertz)
+    h = JouleSecond.planck_constant()
+    return h.mul_herts(frequency)
+
+
+def photon_energy_from_wavelength(wavelength: Meter) -> Joule:
+    '''
+    Formula:
+    - Energy: `E = h * v` where `h` is planck's constant, and `v` is the photon's frequency.
+    - Speed of light: `c = λv` where `λ` is the photon's wavelength. 
+    - Frequency: `v = c/λ`
+    - Energy (alt): `E = h * v = (hc)/λ`
+
+    As h and c are both constants, photon energy E changes in inverse relation to wavelength λ.
+    '''
+    assert isinstance(wavelength, Meter)
+    c = MeterPerSec.speed_of_light()
+    h = JouleSecond.planck_constant()
+    num = c.mul_joule_sec(h)
+    return num.div_meter(wavelength)
+
 
 
 ###############################################################################
@@ -716,7 +873,17 @@ def dev3():
     )
     print(answer)
 
-@program
+# @program
 def dev4():
     reaction = Reaction.from_str("C2 + H2O -> H2O")
     print(reaction.is_balanced())
+
+@program
+def dev5():
+    result = photon_energy_from_frequency(Hertz.Gigahertz(275))
+    print("result: ", result)
+
+# @program
+def dev6():
+    result = photon_energy_from_wavelength(Meter.NanoMeter(240)).value
+    print("result: ", result * 5 * AVOGADRO_CONSTANT)
