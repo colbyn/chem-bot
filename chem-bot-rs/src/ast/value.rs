@@ -247,7 +247,7 @@ impl Value {
             ])
         }
         self.map(Rc::new(|value| {
-            println!("{:?}", value);
+            // println!("{:?}", value);
             match value {
                 Value::Con(x) if &x == "c" => speed_of_light(),
                 Value::Con(x) if &x == "nm" => nm(),
@@ -383,7 +383,7 @@ impl Value {
                     }
                 }
                 let result = unmacthed_xs.len() == 0 && unmacthed_ys.len() == 0;
-                println!("is_equal {:?} == {:?} -> {:?}", xs, ys, result);
+                // println!("is_equal {:?} == {:?} -> {:?}", xs, ys, result);
                 result
             }
             _ => false
