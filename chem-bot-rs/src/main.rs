@@ -1,10 +1,10 @@
 #![allow(unused)]
 
 pub mod parser_utils;
-pub mod data;
-pub mod parser;
+pub mod ast;
 
 fn main() {
-    data::main();
+    // data::main();
     // parser::main();
+    ast::expr::main();
 }

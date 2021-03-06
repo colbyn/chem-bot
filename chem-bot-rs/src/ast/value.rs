@@ -6,9 +6,6 @@ use std::convert::AsRef;
 use std::collections::{HashMap, LinkedList, HashSet};
 pub use num::rational::{Ratio, Rational};
 
-pub type Index = usize;
-pub type KeyWord = String;
-
 ///////////////////////////////////////////////////////////////////////////////
 // HELPER TYPES
 ///////////////////////////////////////////////////////////////////////////////
@@ -93,9 +90,9 @@ pub enum Value {
 }
 
 impl Value {
-    fn num(x: isize) -> Self {Value::Num(x)}
-    fn var(x: &str) -> Self {Value::Var(x.to_owned())}
-    fn ratio(numerator: Value, denominator: Value) -> Self {
+    pub fn num(x: isize) -> Self {Value::Num(x)}
+    pub fn var(x: &str) -> Self {Value::Var(x.to_owned())}
+    pub fn ratio(numerator: Value, denominator: Value) -> Self {
         Value::Product(vec![
             numerator,
             Value::Fraction(
@@ -103,10 +100,10 @@ impl Value {
             )
         ])
     }
-    fn unit_fraction(denominator: Value) -> Self {
+    pub fn unit_fraction(denominator: Value) -> Self {
         Value::Fraction(Box::new(denominator))
     }
-    fn product(xs: &[Value]) -> Self {
+    pub fn product(xs: &[Value]) -> Self {
         Value::Product(xs.to_owned())
     }
     fn from_vec(xs: Vec<Value>) -> Option<Value> {
@@ -127,13 +124,13 @@ impl Value {
             .collect();
         Value::from_vec(xs)
     }
-    fn is_num(&self) -> bool {
+    pub fn is_num(&self) -> bool {
         match self {
             Value::Num(_) => true,
             _ => false
         }
     }
-    fn multiplicative_identity() -> Self {
+    pub fn multiplicative_identity() -> Self {
         Value::Num(1)
     }
     fn unpack_num(&self) -> Option<isize> {
@@ -401,12 +398,30 @@ impl Value {
         let result = for_each(
             factors,
             Rc::new(|left: Value, right: Value| -> (Value, Value) {
+                // CANCEL MATCHING FRACTIONS
                 if left.is_equal(&right.clone().reciprocal()) {
                     return (
                         Value::multiplicative_identity(),
                         Value::multiplicative_identity(),
                     )
                 }
+                // REDUCE INT FRACTIONS
+                match (left.unpack_num(), right.clone().reciprocal().unpack_num()) {
+                    (Some(left), Some(right)) => {
+                        let gcd = num::integer::gcd(left.abs(), right.abs());
+                        let left_sign = left.signum();
+                        let right_sign = right.signum();
+                        let sign = left_sign * right_sign;
+                        let left = (left.abs() / gcd) * sign;
+                        let right = right.abs() / gcd;
+                        return (
+                            Value::Num(left),
+                            Value::unit_fraction(Value::Num(right)),
+                        )
+                    }
+                    _ => ()
+                }
+                // DONE (NOTHING TO DO)
                 (left, right)
             })
         );
@@ -431,157 +446,13 @@ impl Value {
     }
 }
 
-///////////////////////////////////////////////////////////////////////////////
-// EXPRESSION AST (UNEVALUATED)
-///////////////////////////////////////////////////////////////////////////////
 
-#[derive(Debug, Clone)]
-pub struct FunCall {
-    pub name: String,
-    /// positional arguments.
-    pub pos_args: Vec<Expr>,
-    /// keyword arguments.
-    pub key_args: HashMap<String, Expr>,
-}
-
-impl FunCall {
-    pub fn to_value(self) -> Value {
-        match (self.name.as_str(), &self.pos_args[..]) {
-            ("nm", [value]) => Value::Product(vec![
-                value.clone().eval(),
-                Value::Var(self.name),
-            ]),
-            ("photon", []) if self.key_args.contains_key("wavelength") => {
-                unimplemented!()
-            }
-            ("photon", []) if self.key_args.contains_key("frequency") => {
-                unimplemented!()
-            }
-            ("mole", [value]) => Value::Product(vec![
-                unimplemented!()
-            ]),
-            ("energy", [value]) => Value::Product(vec![
-                unimplemented!()
-            ]),
-            _ => unimplemented!()
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
-pub enum Literal {
-    Num(Rational),
-}
-
-impl Literal {
-    pub fn to_value(&self) -> Value {
-        match self {
-            Literal::Num(rat) => {
-                let num = *rat.numer();
-                let den = *rat.denom();
-                if den == 1 {
-                    return Value::Num(num)
-                }
-                if den == -1 {
-                    return Value::Num(num * -1)
-                }
-                Value::ratio(
-                    Value::Num(num),
-                    Value::Num(den),
-                )
-            }
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
-pub enum Expr {
-    Call(Box<FunCall>),
-    Literal(Literal),
-}
-
-impl Expr {
-    pub fn from_file<P: AsRef<Path>>(path: P) -> Result<Expr, ()> {
-        let path = path.as_ref();
-        let source = std::fs::read_to_string(path).unwrap();
-        Expr::from_str(&source)
-    }
-    pub fn from_str(source: &str) -> Result<Expr, ()> {
-        crate::parser::run_parser(source)
-    }
-    pub fn eval(self) -> Value {
-        match self {
-            Expr::Call(call) => {
-                unimplemented!()
-            }
-            Expr::Literal(lit) => lit.to_value(),
-        }
-    }
-}
 
 ///////////////////////////////////////////////////////////////////////////////
 // DEV
 ///////////////////////////////////////////////////////////////////////////////
 
-// pub fn main() {
-//     let value = Value::ratio(
-//         (Value::Product(vec![
-//             Value::Num(100),
-//             Value::Var(String::from("nm")),
-//             Value::Var(String::from("a")),
-//         ])),
-//         (Value::Product(vec![
-//             Value::Num(-100),
-//             Value::Var(String::from("nm")),
-//             Value::Var(String::from("b")),
-//         ])),
-//     );
-//     let value = Value::ratio(
-//         Value::Product(vec![
-//             Value::Var(String::from("a")),
-//         ]),
-//         Value::ratio(
-//             Value::Product(vec![
-//                 Value::Var(String::from("a")),
-//             ]),
-//             Value::Product(vec![
-//                 Value::Var(String::from("b")),
-//             ]),
-//         )
-//     );
-//     // let mut sink = Vec::<Value>::new();
-//     // let value = value.hoist_products(&mut sink);
-//     let value = value.simplify();
-//     println!("-----------------------------------");
-//     println!("{:#?}", value);
-//     // println!("{:#?}", sink);
-// }
-
 pub fn main() {
-    // let left = Value::product(&[
-    //     Value::var("a"),
-    //     Value::var("b"),
-    //     Value::var("c"),
-    // ]);
-    // let mut right = Value::unit_fraction(Value::product(&[
-    //     Value::var("a"),
-    //     Value::var("b"),
-    //     Value::var("d"),
-    // ]));
-    // let result = left.cancel_matching_factors(right);
-    // println!("-----------------------------------");
-    // println!("result: {:#?}", result);
-    // // println!("factor: {:#?}", right);
-    // let values = vec![
-    //     Value::var("a"),
-    //     Value::var("b"),
-    //     Value::var("c"),
-    //     Value::var("d"),
-    //     Value::unit_fraction(Value::var("a")),
-    //     Value::unit_fraction(Value::var("b")),
-    //     Value::unit_fraction(Value::var("c")),
-    // ];
-    // let value = Value::Product(values);
     let value = Value::ratio(
         Value::Product(vec![
             Value::Var(String::from("a")),
@@ -601,13 +472,6 @@ pub fn main() {
         ])
     );
     let result = value.simplify();
-    // let results = for_each(values, Rc::new(|left: Value, right: Value| {
-    //     // println!("{:?}   <->   {:?}", left, right);
-    //     let (left, right) = left.cancel_matching_factors(right);
-    //     let left = left.unwrap_or(Value::multiplicative_identity());
-    //     let right = right.unwrap_or(Value::multiplicative_identity());
-    //     (left, right)
-    // }));
     println!("^^^^^^^^^^^^^^^^^^^^^");
     println!("main result: {:#?}", result);
 }

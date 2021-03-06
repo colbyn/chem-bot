@@ -24,7 +24,7 @@ use nom::{
     multi::separated_list0,
     Parser,
 };
-use crate::data::*;
+use crate::ast::expr::*;
 use crate::parser_utils::{self, identifier, parens, ws};
 
 ///////////////////////////////////////////////////////////////////////////////
