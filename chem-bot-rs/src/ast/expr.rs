@@ -244,6 +244,7 @@ impl Expr {
 pub fn main() {
     let expr = Expr::from_str("energy(photon(wavelength = nm(325)))").unwrap();
     let expr = expr.apply_rewrites();
-    println!("{:#?}", expr.unsafe_to_value().expand_constants().simplify());
+    let result = expr.unsafe_to_value().eval();
+    println!("{}", result.to_string());
 }
 

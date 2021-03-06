@@ -80,9 +80,10 @@ fn for_each(
 // VALUE AST
 ///////////////////////////////////////////////////////////////////////////////
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Value {
     Num(isize),
+    Float(f64),
     Var(String),
     /// Represents symbolic constants
     Con(String),
@@ -133,12 +134,24 @@ impl Value {
             _ => false
         }
     }
+    pub fn is_float(&self) -> bool {
+        match self {
+            Value::Float(_) => true,
+            _ => false
+        }
+    }
     pub fn multiplicative_identity() -> Self {
         Value::Num(1)
     }
     fn unpack_num(&self) -> Option<isize> {
         match self {
             Value::Num(x) => Some(*x),
+            _ => None
+        }
+    }
+    fn unpack_float(&self) -> Option<f64> {
+        match self {
+            Value::Float(x) => Some(*x),
             _ => None
         }
     }
@@ -178,6 +191,9 @@ impl Value {
             Value::Num(x) => {
                 *x == 1
             }
+            Value::Float(x) => {
+                *x == 1.0
+            }
             Value::Var(x) => false,
             Value::Con(x) => false,
             Value::Fraction(bot) => {
@@ -191,6 +207,7 @@ impl Value {
     fn trans(self, f: Rc<dyn Fn(Value) -> Option<Value>>) -> Option<Value> {
         match self {
             Value::Num(x) => f(Value::Num(x)),
+            Value::Float(x) => f(Value::Float(x)),
             Value::Var(x) => f(Value::Var(x)),
             Value::Con(x) => f(Value::Con(x)),
             Value::Fraction(bot) => {
@@ -203,19 +220,34 @@ impl Value {
                 let xs = xs
                     .into_iter()
                     .filter_map(|x| x.trans(f.clone()))
+                    .filter_map(|x| f(x))
                     .collect::<Vec<_>>();
                 match xs.len() {
                     0 => None,
-                    1 => Some(xs[0].clone()),
+                    1 => f(xs[0].clone()),
                     _ => f(Value::Product(xs)),
                 }
             }
         }
     }
     fn map(self, f: Rc<dyn Fn(Value) -> Value>) -> Value {
-        self.trans(Rc::new(
-            move |x| Some(f(x))
-        )).unwrap()
+        match self {
+            Value::Num(x) => f(Value::Num(x)),
+            Value::Float(x) => f(Value::Float(x)),
+            Value::Var(x) => f(Value::Var(x)),
+            Value::Con(x) => f(Value::Con(x)),
+            Value::Fraction(bot) => {
+                let bot = bot.map(f.clone());
+                f(Value::Fraction(Box::new(bot)))
+            }
+            Value::Product(xs) => {
+                let xs = xs
+                    .into_iter()
+                    .map(|x| x.map(f.clone()))
+                    .collect::<Vec<_>>();
+                f(Value::Product(xs))
+            }
+        }
     }
     fn abs(self) -> Self {
         self.map(Rc::new(|value| match value {
@@ -246,11 +278,20 @@ impl Value {
                 ten_to_neg_9(),
             ])
         }
+        fn planck_constant() -> Value {
+            let x: f64 = 6.62607015 * (10.0f64.powi(-34));
+            Value::product(&[
+                Value::Float(x),
+                Value::con("J"),
+                Value::con("s"),
+            ])
+        }
         self.map(Rc::new(|value| {
             // println!("{:?}", value);
             match value {
                 Value::Con(x) if &x == "c" => speed_of_light(),
                 Value::Con(x) if &x == "nm" => nm(),
+                Value::Con(x) if &x == "h" => planck_constant(),
                 x => x
             }
         }))
@@ -263,6 +304,16 @@ impl Value {
                 }
                 let result = vec![
                     vec![Value::Num(x)],
+                    value.unpack_product(),
+                ];
+                Value::Product(result.concat())
+            }
+            Value::Float(x) => {
+                if let Some(value) = value.unpack_float() {
+                    return Value::Float(x * value)
+                }
+                let result = vec![
+                    vec![Value::Float(x)],
                     value.unpack_product(),
                 ];
                 Value::Product(result.concat())
@@ -325,6 +376,10 @@ impl Value {
                 values.push(Value::Num(x));
                 Value::Product(values)
             }
+            Value::Float(x) => {
+                values.push(Value::Float(x));
+                Value::Product(values)
+            }
             Value::Var(x) => {
                 values.push(Value::Var(x));
                 Value::Product(values)
@@ -342,6 +397,18 @@ impl Value {
             }
             (Value::Var(x), Value::Var(y)) => {
                 x == y
+            }
+            (Value::Con(x), Value::Con(y)) => {
+                x == y
+            }
+            (Value::Float(x), Value::Float(y)) => {
+                x == y
+            }
+            (Value::Num(x), Value::Float(y)) => {
+                *x as f64 == *y
+            }
+            (Value::Float(x), Value::Num(y)) => {
+                *x == *y as f64
             }
             (Value::Fraction(x), Value::Fraction(y)) => {
                 x.is_equal(y)
@@ -395,6 +462,7 @@ impl Value {
     fn reciprocal(self) -> Self {
         match self {
             Value::Num(x) => Value::unit_fraction(Value::Num(x)),
+            Value::Float(x) => Value::unit_fraction(Value::Float(x)),
             Value::Var(x) => Value::unit_fraction(Value::Var(x)),
             Value::Con(x) => Value::unit_fraction(Value::Con(x)),
             Value::Fraction(bot) => *bot,
@@ -411,6 +479,7 @@ impl Value {
     fn hoist_products(self, sink: &mut Vec<Value>) -> Option<Value> {
         match self {
             Value::Num(x) => Some(Value::Num(x)),
+            Value::Float(x) => Some(Value::Float(x)),
             Value::Var(x) => Some(Value::Var(x)),
             Value::Con(x) => Some(Value::Con(x)),
             Value::Fraction(bot) => {
@@ -477,7 +546,16 @@ impl Value {
                     (Some(left), Some(right)) => {
                         return (
                             Value::multiplicative_identity(),
-                            Value::num(left + right),
+                            Value::num(left * right),
+                        )
+                    }
+                    _ => ()
+                }
+                match (left.unpack_float(), right.unpack_float()) {
+                    (Some(left), Some(right)) => {
+                        return (
+                            Value::multiplicative_identity(),
+                            Value::Float(left * right),
                         )
                     }
                     _ => ()
@@ -487,7 +565,18 @@ impl Value {
                         return (
                             Value::multiplicative_identity(),
                             Value::unit_fraction(
-                                Value::num(left + right)
+                                Value::num(left * right)
+                            ),
+                        )
+                    }
+                    _ => ()
+                }
+                match (left.clone().reciprocal().unpack_float(), right.clone().reciprocal().unpack_float()) {
+                    (Some(left), Some(right)) => {
+                        return (
+                            Value::multiplicative_identity(),
+                            Value::unit_fraction(
+                                Value::Float(left * right)
                             ),
                         )
                     }
@@ -502,6 +591,7 @@ impl Value {
     fn simplify_impl(self) -> Option<Self> {
         match self {
             Value::Num(x) => Some(Value::Num(x)),
+            Value::Float(x) => Some(Value::Float(x)),
             Value::Var(x) => Some(Value::Var(x)),
             Value::Con(x) => Some(Value::Con(x)),
             Value::Fraction(bot) => {
@@ -516,6 +606,60 @@ impl Value {
     }
     pub fn simplify(self) -> Self {
         self.simplify_impl().unwrap_or_else(|| unimplemented!())
+    }
+    pub fn eval(self) -> Self {
+        let mut done = false;
+        let mut state = self;
+        fn cycle(inpt: Value) -> Value {
+            let f = Rc::new(|expr| match expr {
+                Value::Num(x) => Value::Float(x as f64),
+                Value::Fraction(x) if x.is_float() => {
+                    let x = x.unpack_float().unwrap();
+                    Value::Float(x.powi(-1))
+                }
+                x => x
+            });
+            inpt.expand_constants()
+                .map(f.clone())
+                .simplify()
+                .map(f.clone())
+                .simplify()    
+        }
+        while !done {
+            let latest = cycle(state.clone());
+            if latest == state {
+                done = true;
+            }
+            println!("{:?} ~ {:?}", latest, state);
+            state = latest;
+        }
+        state
+    }
+    pub fn to_string(&self) -> String {
+        match self {
+            Value::Num(x) => {
+                format!("{}", x)
+            }
+            Value::Float(x) => {
+                format!("{:e}", x)
+            }
+            Value::Var(x) => {
+                x.clone()
+            }
+            Value::Con(x) => {
+                x.clone()
+            }
+            Value::Fraction(bot) => {
+                format!("1/{}", bot.to_string())
+            }
+            Value::Product(xs) => {
+                xs
+                    .iter()
+                    .map(|x| x.to_string())
+                    .collect::<Vec<_>>()
+                    .join(" ")
+            }
+        }
     }
 }
 
