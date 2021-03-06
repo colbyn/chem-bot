@@ -50,35 +50,27 @@ impl FunCall {
 }
 
 #[derive(Debug, Clone)]
-pub enum Literal {
-    Num(Rational),
-}
-
-impl Literal {
-    pub fn to_value(&self) -> Value {
-        match self {
-            Literal::Num(rat) => {
-                let num = *rat.numer();
-                let den = *rat.denom();
-                if den == 1 {
-                    return Value::Num(num)
-                }
-                if den == -1 {
-                    return Value::Num(num * -1)
-                }
-                Value::ratio(
-                    Value::Num(num),
-                    Value::Num(den),
-                )
-            }
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
 pub enum Expr {
+    Value(Value),
     Call(Box<FunCall>),
-    Literal(Literal),
+}
+
+macro_rules! return_value {
+    ($expr:expr) => {{
+        match $expr {
+            Expr::Value(x) => x,
+            x => return x,
+        }
+    }};
+}
+
+macro_rules! return_value_num {
+    ($expr:expr) => {{
+        match $expr {
+            Expr::Value(Value::Num(x)) => x,
+            x => return x,
+        }
+    }};
 }
 
 impl Expr {
@@ -90,13 +82,158 @@ impl Expr {
     pub fn from_str(source: &str) -> Result<Expr, ()> {
         crate::ast::expr_parser::run_parser(source)
     }
+    pub fn unsafe_to_value(self) -> Value {
+        match self {
+            Expr::Value(x) => x,
+            _ => panic!()
+        }
+    }
     pub fn eval(self) -> Value {
         match self {
             Expr::Call(call) => {
                 unimplemented!()
             }
-            Expr::Literal(lit) => lit.to_value(),
+            Expr::Value(x) => x,
         }
+    }
+    pub fn trans(self, f: Rc<dyn Fn(Expr) -> Expr>) -> Expr {
+        let result = match self {
+            Expr::Value(x) => Expr::Value(x),
+            Expr::Call(call) => {
+                let pos_args = call.pos_args
+                    .into_iter()
+                    .map(|arg| {
+                        arg.trans(f.clone())
+                    })
+                    .collect::<Vec<_>>();
+                let key_args = call.key_args
+                    .into_iter()
+                    .map(|(key, arg)| {
+                        (key, arg.trans(f.clone()))
+                    })
+                    .collect::<HashMap<_, _>>();
+                Expr::Call(Box::new(FunCall {
+                    name: call.name,
+                    pos_args,
+                    key_args,
+                }))
+            }
+        };
+        f(result)
+    }
+    pub fn trans_fun_wildcard(
+        self,
+        name: &str,
+        f: Rc<dyn Fn(FunCall) -> Expr>
+    ) -> Expr {
+        self.trans(Rc::new({
+            let name = name.to_owned();
+            move |expr| {
+                match expr {
+                    Expr::Call(fun_call) if fun_call.name == name => {
+                        f(*fun_call)
+                    }
+                    _ => expr
+                }
+            }
+        }))
+    }
+    pub fn trans_fun(
+        self,
+        name: &str,
+        pos_arg: usize,
+        key_arg: Vec<String>,
+        f: Rc<dyn Fn(FunCall) -> Expr>
+    ) -> Expr {
+        self.trans_fun_wildcard(name, Rc::new({
+            let name = name.to_owned();
+            move |fun_call| {
+                let valid_name = fun_call.name == name;
+                let valid_pos_args = fun_call.pos_args.len() == pos_arg;
+                let valid_key_args = key_arg
+                    .iter()
+                    .all(|key| {
+                        fun_call.key_args.contains_key(key)
+                    });
+                if valid_name && valid_pos_args && valid_key_args {
+                    f(fun_call)
+                } else {
+                    Expr::Call(Box::new(fun_call))
+                }
+            }
+        }))
+    }
+    pub fn trans_fun_arg1(
+        self,
+        name: &str,
+        f: Rc<dyn Fn(Expr) -> Expr>
+    ) -> Expr {
+        self.trans_fun(
+            name,
+            1,
+            vec![],
+            Rc::new({
+                move |fun_call: FunCall| {
+                    let arg = fun_call.pos_args[0].clone();
+                    f(arg)
+                }
+            }),
+        )
+    }
+    pub fn trans_fun_key1(
+        self,
+        name: &str,
+        key_arg: &str,
+        f: Rc<dyn Fn(Expr) -> Expr>
+    ) -> Expr {
+        self.trans_fun(
+            name,
+            0,
+            vec![key_arg.clone().to_owned()],
+            Rc::new({
+                let key_arg = key_arg.to_owned();
+                move |fun_call: FunCall| {
+                    let key_arg = key_arg.clone();
+                    let arg = fun_call.key_args.get(&key_arg).unwrap();
+                    f(arg.clone())
+                }
+            }),
+        )
+    }
+    pub fn apply_rewrites(self) -> Self {
+        let pass = self;
+        let pass = pass.trans_fun_arg1(
+            "nm",
+            Rc::new(|arg: Expr| -> Expr {
+                let value: isize = return_value_num!(arg);
+                Expr::Value(Value::product(&[
+                    Value::num(value),
+                    Value::con("nm")
+                ]))
+            }
+        ));
+        let pass = pass.trans_fun_arg1(
+            "energy",
+            Rc::new(|arg: Expr| -> Expr {
+                arg.trans_fun_key1(
+                    "photon",
+                    "wavelength",
+                    Rc::new(|arg: Expr| -> Expr {
+                        let wavelength = return_value!(arg);
+                        let numerator = Value::product(&[
+                            Value::con("c"),
+                            Value::con("h"),
+                        ]);
+                        let denominator = wavelength;
+                        Expr::Value(Value::ratio(
+                            numerator,
+                            denominator,
+                        ))
+                    }
+                ))
+            }
+        ));
+        pass
     }
 }
 
@@ -105,9 +242,8 @@ impl Expr {
 ///////////////////////////////////////////////////////////////////////////////
 
 pub fn main() {
-    // let value = Expr::from_file("sample.txt")
-    //     .unwrap()
-    //     .eval();
-    // println!("EVALED: {:#?}", value);
+    let expr = Expr::from_str("energy(photon(wavelength = nm(325)))").unwrap();
+    let expr = expr.apply_rewrites();
+    println!("{:#?}", expr.unsafe_to_value().expand_constants().simplify());
 }
 

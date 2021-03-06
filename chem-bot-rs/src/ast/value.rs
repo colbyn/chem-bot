@@ -84,6 +84,8 @@ fn for_each(
 pub enum Value {
     Num(isize),
     Var(String),
+    /// Represents symbolic constants
+    Con(String),
     /// 1/x
     Fraction(Box<Value>),
     Product(Vec<Value>),
@@ -92,6 +94,7 @@ pub enum Value {
 impl Value {
     pub fn num(x: isize) -> Self {Value::Num(x)}
     pub fn var(x: &str) -> Self {Value::Var(x.to_owned())}
+    pub fn con(x: &str) -> Self {Value::Con(x.to_owned())}
     pub fn ratio(numerator: Value, denominator: Value) -> Self {
         Value::Product(vec![
             numerator,
@@ -176,6 +179,7 @@ impl Value {
                 *x == 1
             }
             Value::Var(x) => false,
+            Value::Con(x) => false,
             Value::Fraction(bot) => {
                 bot.is_multiplicative_identity()
             }
@@ -184,24 +188,22 @@ impl Value {
             }
         }
     }
-    fn trans(self, f: impl Fn(Value) -> Option<Value>) -> Option<Value> {
+    fn trans(self, f: Rc<dyn Fn(Value) -> Option<Value>>) -> Option<Value> {
         match self {
             Value::Num(x) => f(Value::Num(x)),
             Value::Var(x) => f(Value::Var(x)),
+            Value::Con(x) => f(Value::Con(x)),
             Value::Fraction(bot) => {
-                let bot = f(*bot);
-                let result = match (bot) {
-                    (Some(bot)) => {
-                        Some(Value::Fraction(
-                            Box::new(bot),
-                        ))
-                    }
-                    (None) => None,
-                };
-                f(result?)
+                let bot = bot.trans(f.clone())?;
+                f(Value::Fraction(
+                    Box::new(bot),
+                ))
             }
             Value::Product(xs) => {
-                let xs = xs.into_iter().filter_map(|x| f(x)).collect::<Vec<_>>();
+                let xs = xs
+                    .into_iter()
+                    .filter_map(|x| x.trans(f.clone()))
+                    .collect::<Vec<_>>();
                 match xs.len() {
                     0 => None,
                     1 => Some(xs[0].clone()),
@@ -210,14 +212,48 @@ impl Value {
             }
         }
     }
-    fn map(self, f: impl Fn(Value) -> Value) -> Value {
-        self.trans(|x| Some(f(x))).unwrap()
+    fn map(self, f: Rc<dyn Fn(Value) -> Value>) -> Value {
+        self.trans(Rc::new(
+            move |x| Some(f(x))
+        )).unwrap()
     }
     fn abs(self) -> Self {
-        self.map(|value| match value {
+        self.map(Rc::new(|value| match value {
             Value::Num(x) => Value::Num(x.abs()),
             x => x
-        })
+        }))
+    }
+    pub fn expand_constants(self) -> Self {
+        // 10e-9
+        fn ten_to_neg_9() -> Value {
+            Value::ratio(
+                Value::num(1),
+                Value::num(1000000000)
+            )
+        }
+        fn speed_of_light() -> Value {
+            Value::ratio(
+                Value::product(&[
+                    Value::num(299792458),
+                    Value::con("m"),
+                ]),
+                Value::con("s")
+            )
+        }
+        fn nm() -> Value {
+            Value::product(&[
+                Value::con("m"),
+                ten_to_neg_9(),
+            ])
+        }
+        self.map(Rc::new(|value| {
+            println!("{:?}", value);
+            match value {
+                Value::Con(x) if &x == "c" => speed_of_light(),
+                Value::Con(x) if &x == "nm" => nm(),
+                x => x
+            }
+        }))
     }
     fn multiply(self, value: Value) -> Self {
         match self {
@@ -232,6 +268,16 @@ impl Value {
                 Value::Product(result.concat())
             }
             Value::Var(x) => {
+                if value.is_multiplicative_identity() {
+                    Value::Var(x)
+                } else {
+                    Value::Product(vec![
+                        value,
+                        Value::Var(x),
+                    ])
+                }
+            }
+            Value::Con(x) => {
                 if value.is_multiplicative_identity() {
                     Value::Var(x)
                 } else {
@@ -281,6 +327,10 @@ impl Value {
             }
             Value::Var(x) => {
                 values.push(Value::Var(x));
+                Value::Product(values)
+            }
+            Value::Con(x) => {
+                values.push(Value::Con(x));
                 Value::Product(values)
             }
         }
@@ -346,6 +396,7 @@ impl Value {
         match self {
             Value::Num(x) => Value::unit_fraction(Value::Num(x)),
             Value::Var(x) => Value::unit_fraction(Value::Var(x)),
+            Value::Con(x) => Value::unit_fraction(Value::Con(x)),
             Value::Fraction(bot) => *bot,
             Value::Product(xs) => {
                 let xs = xs
@@ -361,6 +412,7 @@ impl Value {
         match self {
             Value::Num(x) => Some(Value::Num(x)),
             Value::Var(x) => Some(Value::Var(x)),
+            Value::Con(x) => Some(Value::Con(x)),
             Value::Fraction(bot) => {
                 let mut bot_sink = Vec::new();
                 if let Some(bot) = bot.hoist_products(&mut bot_sink) {
@@ -421,6 +473,26 @@ impl Value {
                     }
                     _ => ()
                 }
+                match (left.unpack_num(), right.unpack_num()) {
+                    (Some(left), Some(right)) => {
+                        return (
+                            Value::multiplicative_identity(),
+                            Value::num(left + right),
+                        )
+                    }
+                    _ => ()
+                }
+                match (left.clone().reciprocal().unpack_num(), right.clone().reciprocal().unpack_num()) {
+                    (Some(left), Some(right)) => {
+                        return (
+                            Value::multiplicative_identity(),
+                            Value::unit_fraction(
+                                Value::num(left + right)
+                            ),
+                        )
+                    }
+                    _ => ()
+                }
                 // DONE (NOTHING TO DO)
                 (left, right)
             })
@@ -431,6 +503,7 @@ impl Value {
         match self {
             Value::Num(x) => Some(Value::Num(x)),
             Value::Var(x) => Some(Value::Var(x)),
+            Value::Con(x) => Some(Value::Con(x)),
             Value::Fraction(bot) => {
                 bot
                     .cancel_matching_factors()
@@ -441,7 +514,7 @@ impl Value {
             }
         }
     }
-    fn simplify(self) -> Self {
+    pub fn simplify(self) -> Self {
         self.simplify_impl().unwrap_or_else(|| unimplemented!())
     }
 }

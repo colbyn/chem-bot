@@ -1,1 +1,1 @@
-energy(mole(photon(wavelength = nm(325))))
+energy(photon(wavelength = nm(325)))

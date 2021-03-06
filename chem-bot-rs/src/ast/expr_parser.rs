@@ -25,6 +25,7 @@ use nom::{
     Parser,
 };
 use crate::ast::expr::*;
+use crate::ast::value::Value;
 use crate::parser_utils::{self, identifier, parens, ws};
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -43,7 +44,7 @@ pub fn is_uppercase(chr: char) -> bool {
 
 pub fn parse_literal_number(
     source: &str
-) -> Result<(&str, Literal), nom::Err<nom::error::Error<&str>>> {
+) -> Result<(&str, Value), nom::Err<nom::error::Error<&str>>> {
     let (source, mut subscript) = take_while1(|x: char| {
         match x {
             '0' => true,
@@ -60,9 +61,7 @@ pub fn parse_literal_number(
         }
     })(source)?;
     let value = subscript.parse::<isize>().unwrap();
-    Ok((source, Literal::Num(
-        Rational::new(value, 1)
-    )))
+    Ok((source, Value::Num(value)))
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -78,7 +77,7 @@ fn parse_ast(source: &str) -> Result<(&str, Expr), nom::Err<nom::error::Error<&s
 
 fn parse_literal(source: &str) -> Result<(&str, Expr), nom::Err<nom::error::Error<&str>>> {
     let (source, literal) = parse_literal_number(source)?;
-    let ast = Expr::Literal(literal);
+    let ast = Expr::Value(literal);
     Ok((source, ast))
 }
 
