@@ -116,6 +116,38 @@ impl Expr {
             )
         ])
     }
+    // pub fn joule_second() -> Self {
+    //     Expr::Product(vec![
+    //         Expr::con("J"),
+    //         Expr::con("s"),
+    //     ])
+    // }
+    pub fn planck_constant() -> Self {
+        Expr::con("h")
+    }
+    pub fn speed_of_light() -> Self {
+        Expr::con("c")
+    }
+    // pub fn meter_per_sec() -> Self {
+    //     Expr::ratio(
+    //         Expr::con("m"),
+    //         Expr::con("s"),
+    //     )
+    // }
+    pub fn hertz() -> Self {
+        Expr::con("Hz")
+    }
+    pub fn gigahertz() -> Self {
+        Expr::Product(vec![
+            Expr::hertz(),
+            Expr::float(10.0f64.powi(9)),
+        ])
+    }
+    pub fn avogadro_number() -> Self {
+        Expr::float(
+            6.02214076f64 * (10.0f64).powi(23)
+        )
+    }
     pub fn from_file<P: AsRef<Path>>(path: P) -> Result<Expr, ()> {
         let path = path.as_ref();
         let source = std::fs::read_to_string(path).unwrap();
@@ -155,6 +187,12 @@ impl Expr {
     fn unpack_num(&self) -> Option<BigRational> {
         match self {
             Expr::Num(x) => Some(x.clone()),
+            _ => None
+        }
+    }
+    fn unpack_con(&self) -> Option<String> {
+        match self {
+            Expr::Con(x) => Some(x.clone()),
             _ => None
         }
     }
@@ -354,6 +392,27 @@ impl Expr {
         let result = for_each(
             factors,
             Rc::new(|left: Expr, right: Expr| -> (Expr, Expr) {
+                // FUNCTION HELPERS
+                fn if_match<T>(
+                    left: Option<T>,
+                    right: Option<T>,
+                    f: impl Fn(T, T)->(Expr, Expr),
+                ) -> Option<(Expr, Expr)> {
+                    match (left, right) {
+                        (Some(l), Some(r)) => Some(f(l, r)),
+                        _ => None
+                    }
+                }
+                fn if_match_<T>(
+                    left: Option<T>,
+                    right: Option<T>,
+                    f: impl Fn(T, T)->Option<(Expr, Expr)>,
+                ) -> Option<(Expr, Expr)> {
+                    match (left, right) {
+                        (Some(l), Some(r)) => f(l, r),
+                        _ => None
+                    }
+                }
                 // CANCEL MATCHING FRACTIONS
                 if left.is_equal(&right.clone().reciprocal()) {
                     return (
@@ -363,44 +422,66 @@ impl Expr {
                 }
                 // REDUCE INT FRACTIONS
                 use num::Integer;
-                // match (left.unpack_num(), right.clone().reciprocal().unpack_num()) {
-                //     (Some(left), Some(right)) => {
-                //         let gcd = compute_gcd(
-                //             num::abs(left.clone()),
-                //             num::abs(right.clone()),
-                //         );
-                //         let left_sign = num::signum(left.clone());
-                //         let right_sign = num::signum(right.clone());
-                //         let sign = left_sign * right_sign;
-                //         let left = (num::abs(left) / gcd.clone()) * sign;
-                //         let right = num::abs(right) / gcd;
-                //         return (
-                //             Expr::Num(left),
-                //             Expr::unit_fraction(Expr::Num(right)),
-                //         )
-                //     }
-                //     _ => ()
-                // }
-                match (left.unpack_num(), right.unpack_num()) {
-                    (Some(left), Some(right)) => {
-                        return (
-                            Expr::multiplicative_identity(),
-                            Expr::Num(left * right),
-                        )
+                fn only_int(x: BigRational) -> Option<BigRational> {
+                    if x.denom() == &BigInt::from_i64(1).unwrap() {
+                        Some(x)
+                    } else {
+                        None
                     }
-                    _ => ()
                 }
-                match (left.clone().reciprocal().unpack_num(), right.clone().reciprocal().unpack_num()) {
-                    (Some(left), Some(right)) => {
-                        return (
-                            Expr::multiplicative_identity(),
-                            Expr::unit_fraction(
-                                Expr::Num(left * right)
-                            ),
-                        )
+                return_some!(if_match_(
+                    left.unpack_num()
+                        .and_then(only_int)
+                        .and_then(|x| x.to_i32()),
+                    right.clone()
+                         .reciprocal()
+                         .unpack_num()
+                         .and_then(only_int)
+                         .and_then(|x| x.to_i32()),
+                    |left, right| {
+                        let left_original = left;
+                        let right_original = right;
+                        let gcd = num::integer::gcd(left.abs(), right.abs());
+                        let left_sign = left.signum();
+                        let right_sign = right.signum();
+                        let sign = left_sign * right_sign;
+                        let left = (left.abs() / gcd) * sign;
+                        let right = right.abs() / gcd;
+                        assert!(left != 0);
+                        assert!(right != 0);
+                        Some((
+                            Expr::int(left as i64),
+                            Expr::unit_fraction(Expr::int(right as i64)),
+                        ))
                     }
-                    _ => ()
-                }
+                ));
+                return_some!(if_match(
+                    left.unpack_num(),
+                    right.unpack_num(),
+                    |left, right| (
+                        Expr::multiplicative_identity(),
+                        Expr::Num(left * right),
+                    )
+                ));
+                return_some!(if_match(
+                    left.clone().reciprocal().unpack_num(),
+                    right.clone().reciprocal().unpack_num(),
+                    |left, right| (
+                        Expr::multiplicative_identity(),
+                        Expr::unit_fraction( Expr::Num(left * right)),
+                    )
+                ));
+                return_some!(if_match_(
+                    left.unpack_con(),
+                    right.unpack_con(),
+                    |left, right| match (left.as_str(), right.as_str()) {
+                        ("Hz", "s") => Some((
+                            Expr::multiplicative_identity(),
+                            Expr::multiplicative_identity(),
+                        )),
+                        _ => None
+                    }
+                ));
                 // DONE (NOTHING TO DO)
                 (left, right)
             })
@@ -555,24 +636,10 @@ impl Expr {
             }
         }
     }
-    // pub fn eval(self) -> Expr {
-    //     self.simplify()
-    //         .trans(Rc::new(crate::ast::funs::apply))
-    //         .expand_constants()
-    //         .simplify()
-    // }
     pub fn eval(self) -> Self {
         let mut done = false;
         let mut state = self;
         fn cycle(inpt: Expr) -> Expr {
-            // let f = Rc::new(|expr| match expr {
-            //     Expr::Num(x) => Expr::Float(x as f64),
-            //     Expr::Fraction(x) if x.is_float() => {
-            //         let x = x.unpack_float().unwrap();
-            //         Expr::Float(x.powi(-1))
-            //     }
-            //     x => x
-            // });
             inpt.simplify()
                 .trans(Rc::new(crate::ast::funs::apply))
                 .expand_constants()
@@ -583,7 +650,6 @@ impl Expr {
             if latest == state {
                 done = true;
             }
-            println!("{}", latest.to_string());
             state = latest;
         }
         state
@@ -595,7 +661,10 @@ impl Expr {
 ///////////////////////////////////////////////////////////////////////////////
 
 pub fn main() {
-    let expr = Expr::from_str("energy(photon(wavelength = nm(325)))").unwrap();
+    // let expr = Expr::from_str("mole(energy(photon(wavelength = nm(325))))").unwrap();
+    // let result = expr.clone().eval();
+    // println!("{:#?}", result.to_string());
+    let expr = Expr::from_str("energy(photon(frequency = GHz(275)))").unwrap();
     let result = expr.clone().eval();
     println!("{:#?}", result.to_string());
 }

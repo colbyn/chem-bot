@@ -198,19 +198,36 @@ macro_rules! defintion {
 ///////////////////////////////////////////////////////////////////////////////
 
 fn all_functions() -> Vec<FunctionDecl> {
-    let nm_decl = defintion!(
+    let mut definitions = Vec::new();
+    definitions.push(defintion!(
+        mole(argument value:Expr) => {
+            Expr::Product(vec![
+                value,
+                Expr::avogadro_number(),
+            ])
+        }
+    ));
+    definitions.push(defintion!(
+        GHz(argument value:BigRational) => {
+            Expr::Product(vec![
+                Expr::Num(value),
+                Expr::gigahertz()
+            ])
+        }
+    ));
+    definitions.push(defintion!(
         nm(argument value:BigRational) => {
             Expr::Product(vec![
                 Expr::Num(value),
                 Expr::con("nm")
             ])
         }
-    );
-    let energy_photon_wavelength = defintion!(
+    ));
+    definitions.push(defintion!(
         energy => photon(keyword wavelength : Expr) => {{
             let numerator = Expr::Product(vec![
-                Expr::con("c"),
-                Expr::con("h"),
+                Expr::speed_of_light(),
+                Expr::planck_constant(),
             ]);
             let denominator = wavelength;
             Expr::ratio(
@@ -218,11 +235,16 @@ fn all_functions() -> Vec<FunctionDecl> {
                 denominator,
             )
         }}
-    );
-    vec![
-        nm_decl,
-        energy_photon_wavelength,
-    ]
+    ));
+    definitions.push(defintion!(
+        energy => photon(keyword frequency : Expr) => {{
+            Expr::Product(vec![
+                Expr::planck_constant(),
+                frequency
+            ])
+        }}
+    ));
+    definitions
 }
 
 pub fn apply(expr: Expr) -> Expr {

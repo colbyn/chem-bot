@@ -26,3 +26,13 @@ macro_rules! return_fun_call_arg0 {
     }};
 }
 
+#[macro_export]
+macro_rules! return_some {
+    ($expr:expr) => {
+        match $expr {
+            Some(x) => return x,
+            None => ()
+        }
+    };
+}
+
