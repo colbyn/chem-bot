@@ -8,7 +8,6 @@ use std::collections::{HashMap, LinkedList, HashSet, VecDeque};
 use num::{FromPrimitive, ToPrimitive, BigRational};
 
 use crate::ast::expr::{Expr, FunCall};
-use crate::ast::value::Value;
 use crate::*;
 
 ///////////////////////////////////////////////////////////////////////////////
