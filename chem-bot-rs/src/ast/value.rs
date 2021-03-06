@@ -630,7 +630,7 @@ impl Value {
             if latest == state {
                 done = true;
             }
-            println!("{:?} ~ {:?}", latest, state);
+            // println!("{:?} ~ {:?}", latest, state);
             state = latest;
         }
         state
