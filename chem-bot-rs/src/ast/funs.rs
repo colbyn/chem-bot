@@ -75,8 +75,8 @@ pub struct FunctionDecl {
 }
 
 impl FunctionDecl {
-    pub fn call(&self, source: Expr) -> Expr {
-        let root_fun_call = return_fun_call!(source.clone());
+    pub fn call(&self, source: Expr) -> Result<Expr, Expr> {
+        let root_fun_call = return_fun_call!(Err, source.clone());
         match (&self.path.clone()[..], self.pos_args.clone()) {
             ([name1], 1) => {
                 let fun_call = *root_fun_call.clone();
@@ -89,15 +89,15 @@ impl FunctionDecl {
                     });
                 if valid_name && valid_pos_args && valid_key_args {
                     match (self.body.0)(fun_call.clone()) {
-                        Some(x) => x,
-                        None => source,
+                        Some(x) => Ok(x),
+                        None => Err(source),
                     }
                 } else {
-                    source
+                    Err(source)
                 }
             }
             ([name1, name2], _) => {
-                let fun_call = *return_fun_call!(return_fun_call_arg0!(source.clone()));
+                let fun_call = *return_fun_call!(Err, return_fun_call_arg0!(Err, source.clone()));
                 let valid_name = {
                     &root_fun_call.name == name1 &&
                     &fun_call.name == name2
@@ -110,11 +110,11 @@ impl FunctionDecl {
                     });
                 if valid_name && valid_pos_args && valid_key_args {
                     match (self.body.0)(fun_call.clone()) {
-                        Some(x) => x,
-                        None => source,
+                        Some(x) => Ok(x),
+                        None => Err(source),
                     }
                 } else {
-                    source
+                    Err(source)
                 }
             }
             _ => unimplemented!()
@@ -226,12 +226,20 @@ pub fn main() {
     // println!("{:#?}", result);
     // ------------------------------------------------------------------------
     let expr = Expr::from_str("energy(photon(wavelength = nm(325)))").unwrap();
-    let decl = defintion!(
-        energy => photon(keyword wavelength : Expr) => {{
-            wavelength
+    let decl1 = defintion!(
+        energy => photon(keyword wavelength : Value) => {{
+            let numerator = Value::product(&[
+                Value::con("c"),
+                Value::con("h"),
+            ]);
+            let denominator = wavelength;
+            Expr::Value(Value::ratio(
+                numerator,
+                denominator,
+            ))
         }}
     );
-    let result = decl.call(expr);
+    let result = decl1.call(expr);
     println!("{:#?}", result);
 }
 

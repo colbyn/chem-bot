@@ -22,25 +22,25 @@ macro_rules! return_value_num {
 
 #[macro_export]
 macro_rules! return_fun_call {
-    ($expr:expr) => {{
+    ($constr:expr, $expr:expr) => {{
         match $expr {
             Expr::Call(x) => x,
-            x => return x,
+            x => return $constr(x),
         }
     }};
 }
 
 #[macro_export]
 macro_rules! return_fun_call_arg0 {
-    ($expr:expr) => {{
+    ($constr:expr, $expr:expr) => {{
         match $expr {
             Expr::Call(x) => {
                 match x.pos_args.get(0) {
                     Some(x) => x.clone(),
-                    _ => return $expr
+                    _ => return $constr($expr)
                 }
             }
-            x => return x,
+            x => return $constr(x),
         }
     }};
 }
