@@ -1,5 +1,7 @@
 use std::collections::HashMap;
 use std::iter::FromIterator;
+use std::str::FromStr;
+use nom::number::complete::float;
 use nom::{
     IResult,
     bytes::complete::{tag, take_while_m_n, take_while, take_while1},
@@ -44,51 +46,10 @@ pub fn is_uppercase(chr: char) -> bool {
     (chr as char).is_lowercase()
 }
 
-fn parse_integer(source: &str) -> IResult<&str, BigRational> {
-    let parser = recognize
-        (many1(terminated(one_of("0123456789"), many0(char('_')))));
-    let mut parser = map_res(parser, |x: &str| {
-        use std::str::FromStr;
-        BigRational::from_str(x)
-    });
-    parser(source)
-}
-
-fn parse_float(source: &str) -> IResult<&str, BigRational> {
-    fn decimal(source: &str) -> IResult<&str, &str> {
-        recognize(many1(terminated(one_of("0123456789"), many0(char('_')))))(source)
-    }
-    let parser = alt((
-        // Case one: .42
-        recognize(
-            tuple((
-                char('.'),
-                decimal,
-                opt(tuple((
-                    one_of("eE"),
-                    opt(one_of("+-")),
-                    decimal
-                )))
-            ))
-        )
-        , // Case two: 42e42 and 42.42e42
-        recognize(
-            tuple((
-                decimal,
-                opt(preceded(char('.'), decimal)),
-                one_of("eE"),
-                opt(one_of("+-")),
-                decimal
-            ))
-        )
-        , // Case three: 42. and 42.42
-        recognize(tuple(( decimal, char('.'), opt(decimal))))
-    ));
-    let mut parser = map_res(parser, |x: &str| {
-        use std::str::FromStr;
-        BigRational::from_str(x)
-    });
-    parser(source) 
+fn parse_number(source: &str) -> IResult<&str, BigRational> {
+    let (source, value) = float(source)?;
+    let number = BigRational::from_f32(value).unwrap();
+    Ok((source, number))
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -97,13 +58,13 @@ fn parse_float(source: &str) -> IResult<&str, BigRational> {
 
 fn parse_ast(source: &str) -> Result<(&str, Expr), nom::Err<nom::error::Error<&str>>> {
     fn inner(source: &str) -> Result<(&str, Expr), nom::Err<nom::error::Error<&str>>> {
-        alt((parse_literal, parse_function_call))(source)
+        alt((parse_function_call, parse_literal))(source)
     }
     ws(inner)(source)
 }
 
 fn parse_literal(source: &str) -> Result<(&str, Expr), nom::Err<nom::error::Error<&str>>> {
-    let (source, literal) = alt((parse_integer, parse_float))(source)?;
+    let (source, literal) = parse_number(source)?;
     let ast = Expr::Num(literal);
     Ok((source, ast))
 }
@@ -118,7 +79,7 @@ fn parse_function_call(source: &str) -> Result<(&str, Expr), nom::Err<nom::error
         source: &str
     ) -> Result<(&str, (String, Expr)), nom::Err<nom::error::Error<&str>>> {
         let (source, ident) = identifier(source)?;
-        let (source, _) = ws(tag("="))(source)?;
+        let (source, _) = ws(char('='))(source)?;
         let (source, ast) = parse_ast(source)?;
         Ok((source, (ident, ast)))
     }
@@ -161,8 +122,10 @@ pub(crate) fn run_parser(source: &str) -> Result<Expr, ()> {
 ///////////////////////////////////////////////////////////////////////////////
 
 pub(crate) fn main() {
-    let source = std::fs::read_to_string("sample.txt").unwrap();
-    let result = run_parser(&source).unwrap();
-    println!("{:#?}", result);
+    // let source = std::fs::read_to_string("sample.txt").unwrap();
+    // let result = run_parser(&source).unwrap();
+    // println!("{:#?}", result);
+    let result = parse_ast("lorem(2)");
+    println!("{:?}", result);
 }
 

@@ -186,6 +186,12 @@ impl Expr {
             _ => false
         }
     }
+    pub fn is_con(&self) -> bool {
+        match self {
+            Expr::Con(_) => true,
+            _ => false
+        }
+    }
     pub fn unit_fraction(val: Expr) -> Expr {
         // Expr::Fraction(Box::new(val))
         val.reciprocal()
@@ -488,6 +494,17 @@ impl Expr {
                         _ => None
                     }
                 ));
+                return_some!(if_match_(
+                    left.reciprocal().unpack_con(),
+                    right.reciprocal().unpack_con(),
+                    |left, right| match (left.as_str(), right.as_str()) {
+                        ("Hz", "s") => Some((
+                            Expr::multiplicative_identity(),
+                            Expr::multiplicative_identity(),
+                        )),
+                        _ => None
+                    }
+                ));
                 // DONE (NOTHING TO DO)
                 (left, right)
             })
@@ -600,7 +617,7 @@ impl Expr {
                         Some(format!("{}", x))
                     } else {
                         let x = x.to_f32()?;
-                        Some(format!("{:e}", x))
+                        Some(format!("{}", x))
                     }
                 }
                 run_basic(x.clone()).unwrap_or_else(|| {
@@ -610,6 +627,10 @@ impl Expr {
             }
             Expr::Con(x) => {
                 x.clone()
+            }
+            Expr::Fraction(x) if x.is_con() => {
+                let name = x.unpack_con().unwrap();
+                format!("{}⁻¹", name)
             }
             Expr::Fraction(bot) => {
                 format!("1/({})", bot.to_string())
@@ -673,7 +694,7 @@ pub fn main() {
     // let expr = Expr::from_str("energy(photon(frequency = GHz(275)))").unwrap();
     // let result = expr.clone().eval();
     // println!("{:#?}", result.to_string());
-    let expr = Expr::from_str("wavelength(x = a(2))").unwrap();
+    let expr = Expr::from_str("wavelength(frequency = MHz(72.5))").unwrap();
     let result = expr.clone().eval();
     println!("{:#?}", result.to_string());
 }

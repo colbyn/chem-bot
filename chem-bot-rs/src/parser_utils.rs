@@ -219,7 +219,7 @@ pub(crate) fn comma(source: &str) -> Result<(&str, &str), nom::Err<nom::error::E
 pub(crate) fn identifier(source: &str) -> Result<(&str, String), nom::Err<nom::error::Error<&str>>> {
     let (source, ident) = recognize(
         pair(
-            alt((alphanumeric1, tag("_"))),
+            alt((alpha1, tag("_"))),
             many0(alt((alphanumeric1, tag("_"), tag("-"))))
         )
     )(source)?;

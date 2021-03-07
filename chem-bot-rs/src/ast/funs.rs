@@ -70,7 +70,7 @@ impl FunctionDecl {
         let source_ref = source.clone();
         let root_fun_call = return_fun_call!(Err(source), source.clone());
         match (&self.path.clone()[..], self.pos_args.clone()) {
-            ([name1], 1) => {
+            ([name1], _) => {
                 let fun_call = *root_fun_call.clone();
                 let valid_name = &fun_call.name == &self.path[0];
                 let valid_pos_args = fun_call.pos_args.len() == self.pos_args;
@@ -153,14 +153,13 @@ macro_rules! init_arg_scope {
 
 #[macro_export]
 macro_rules! defintion {
-    ($name1:ident => $name2:ident($($arg:tt)*$(,)?) => $body:expr) => {{
-        let name1 = String::from(stringify!($name1));
-        let name2 = String::from(stringify!($name2));
+    ($name:ident($($arg:tt)*$(,)?) => $body:expr) => {{
+        let name = String::from(stringify!($name));
         let mut pos_counter = 0;
         let mut keyword_state = Vec::<String>::new();
         init_arg_header!(pos_counter, keyword_state, $($arg)*);
         let function_decl = FunctionDecl {
-            path: vec![name1, name2],
+            path: vec![name],
             pos_args: pos_counter,
             key_args: keyword_state,
             body: Body(Rc::new(
@@ -174,13 +173,14 @@ macro_rules! defintion {
         };
         function_decl
     }};
-    ($name:ident($($arg:tt)*$(,)?) => $body:expr) => {{
-        let name = String::from(stringify!($name));
+    ($name1:ident => $name2:ident($($arg:tt)*$(,)?) => $body:expr) => {{
+        let name1 = String::from(stringify!($name1));
+        let name2 = String::from(stringify!($name2));
         let mut pos_counter = 0;
         let mut keyword_state = Vec::<String>::new();
         init_arg_header!(pos_counter, keyword_state, $($arg)*);
         let function_decl = FunctionDecl {
-            path: vec![name],
+            path: vec![name1, name2],
             pos_args: pos_counter,
             key_args: keyword_state,
             body: Body(Rc::new(
@@ -297,10 +297,15 @@ pub fn apply(expr: Expr) -> Expr {
     all_functions()
         .into_iter()
         .fold(expr, |expr, f| {
-            match f.call(expr) {
-                Ok(x) => x,
-                Err(x) => x,
-            }
+            let result = match f.call(expr) {
+                Ok(x) => {
+                    x
+                }
+                Err(x) => {
+                    x
+                }
+            };
+            result
         })
 }
 
