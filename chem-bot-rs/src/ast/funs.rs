@@ -89,8 +89,8 @@ impl FunctionDecl {
                 }
             }
             ([name1, name2], _) => {
-                let alpha = return_fun_call_arg0!(Err(source), source.clone());
-                let fun_call = *return_fun_call!(Err(source), alpha);
+                let fun_call = return_fun_call_arg0!(Err(source), source.clone());
+                let fun_call = *return_fun_call!(Err(source), fun_call);
                 let valid_name = {
                     &root_fun_call.name == name1 &&
                     &fun_call.name == name2
