@@ -67,7 +67,8 @@ pub struct FunctionDecl {
 
 impl FunctionDecl {
     pub fn call(&self, source: Expr) -> Result<Expr, Expr> {
-        let root_fun_call = return_fun_call!(Err, source.clone());
+        let source_ref = source.clone();
+        let root_fun_call = return_fun_call!(Err(source), source.clone());
         match (&self.path.clone()[..], self.pos_args.clone()) {
             ([name1], 1) => {
                 let fun_call = *root_fun_call.clone();
@@ -88,7 +89,8 @@ impl FunctionDecl {
                 }
             }
             ([name1, name2], _) => {
-                let fun_call = *return_fun_call!(Err, return_fun_call_arg0!(Err, source.clone()));
+                let alpha = return_fun_call_arg0!(Err(source), source.clone());
+                let fun_call = *return_fun_call!(Err(source), alpha);
                 let valid_name = {
                     &root_fun_call.name == name1 &&
                     &fun_call.name == name2
@@ -101,14 +103,16 @@ impl FunctionDecl {
                     });
                 if valid_name && valid_pos_args && valid_key_args {
                     match (self.body.0)(fun_call.clone()) {
-                        Some(x) => Ok(x),
+                        Some(x) => {
+                            Ok(x)
+                        }
                         None => Err(source),
                     }
                 } else {
                     Err(source)
                 }
             }
-            _ => unimplemented!()
+            _ => Err(source)
         }
     }
 }
@@ -149,13 +153,14 @@ macro_rules! init_arg_scope {
 
 #[macro_export]
 macro_rules! defintion {
-    ($name:ident($($arg:tt)*$(,)?) => $body:expr) => {{
-        let name = String::from(stringify!($name));
+    ($name1:ident => $name2:ident($($arg:tt)*$(,)?) => $body:expr) => {{
+        let name1 = String::from(stringify!($name1));
+        let name2 = String::from(stringify!($name2));
         let mut pos_counter = 0;
         let mut keyword_state = Vec::<String>::new();
         init_arg_header!(pos_counter, keyword_state, $($arg)*);
         let function_decl = FunctionDecl {
-            path: vec![name],
+            path: vec![name1, name2],
             pos_args: pos_counter,
             key_args: keyword_state,
             body: Body(Rc::new(
@@ -169,15 +174,13 @@ macro_rules! defintion {
         };
         function_decl
     }};
-
-    ($name1:ident => $name2:ident($($arg:tt)*$(,)?) => $body:expr) => {{
-        let name1 = String::from(stringify!($name1));
-        let name2 = String::from(stringify!($name2));
+    ($name:ident($($arg:tt)*$(,)?) => $body:expr) => {{
+        let name = String::from(stringify!($name));
         let mut pos_counter = 0;
         let mut keyword_state = Vec::<String>::new();
         init_arg_header!(pos_counter, keyword_state, $($arg)*);
         let function_decl = FunctionDecl {
-            path: vec![name1, name2],
+            path: vec![name],
             pos_args: pos_counter,
             key_args: keyword_state,
             body: Body(Rc::new(
@@ -207,22 +210,36 @@ fn all_functions() -> Vec<FunctionDecl> {
             ])
         }
     ));
-    definitions.push(defintion!(
-        GHz(argument value:BigRational) => {
-            Expr::Product(vec![
-                Expr::Num(value),
-                Expr::gigahertz()
-            ])
-        }
-    ));
-    definitions.push(defintion!(
-        nm(argument value:BigRational) => {
-            Expr::Product(vec![
-                Expr::Num(value),
-                Expr::con("nm")
-            ])
-        }
-    ));
+    // definitions.push(defintion!(
+    //     GHz(argument value:BigRational) => {
+    //         Expr::Product(vec![
+    //             Expr::Num(value),
+    //             Expr::gigahertz()
+    //         ])
+    //     }
+    // ));
+    // definitions.push(defintion!(
+    //     MHz(argument value:BigRational) => {
+    //         Expr::Product(vec![
+    //             Expr::Num(value),
+    //             Expr::megahertz()
+    //         ])
+    //     }
+    // ));
+    // definitions.push(defintion!(
+    //     nm(argument value:BigRational) => {
+    //         Expr::Product(vec![
+    //             Expr::Num(value),
+    //             Expr::con("nm")
+    //         ])
+    //     }
+    // ));
+    // NOTE:
+    // - Formula: `E = h * v` where `h` is planck's constant, and `v` is the photon's frequency.
+    // - Speed of light: `c = λv` where `λ` is the photon's wavelength.
+    // - Frequency: `v = c/λ`
+    // - Energy (alt): `E = h * v = (hc)/λ`
+    // As h and c are both constants, photon energy E changes in inverse relation to wavelength λ.
     definitions.push(defintion!(
         energy => photon(keyword wavelength : Expr) => {{
             let numerator = Expr::Product(vec![
@@ -236,14 +253,43 @@ fn all_functions() -> Vec<FunctionDecl> {
             )
         }}
     ));
-    definitions.push(defintion!(
-        energy => photon(keyword frequency : Expr) => {{
-            Expr::Product(vec![
-                Expr::planck_constant(),
-                frequency
-            ])
-        }}
-    ));
+    // Formula: `E = h * v` where `h` is planck's constant, and `v` is frequency (in hertz).
+    // NOTE: Since `1㎐ = 1/s`, the seconds (s) cancels out.
+    // definitions.push(defintion!(
+    //     energy => photon(keyword frequency : Expr) => {{
+    //         Expr::Product(vec![
+    //             Expr::planck_constant(),
+    //             frequency
+    //         ])
+    //     }}
+    // ));
+    // NOTE:
+    // - Formula: `v = c/λ` where
+    //  * `λ` is the photon's wavelength
+    //  * `v` is the photon's frequency.
+    // - Speed of light: `c = λv` where `λ` is the photon's wavelength.
+    // - Energy (alt): `E = h * v = (hc)/λ`
+    // definitions.push(defintion!(
+    //     frequency(keyword wavelength : Expr) => {{
+    //         unimplemented!()
+    //     }}
+    // ));
+    // NOTE:
+    // - Formula: `λ = c / ν` where
+    //  * `λ` is the photon's wavelength
+    //  * `v` is the photon's frequency.
+    // - Speed of light: `c = λv` where `λ` is the photon's wavelength.
+    // - Energy (alt): `E = h * v = (hc)/λ`
+    // definitions.push(defintion!(
+    //     wavelength(keyword frequency : Expr) => {{
+    //         let numerator = Expr::speed_of_light();
+    //         let denominator = frequency;
+    //         Expr::ratio(
+    //             numerator,
+    //             denominator,
+    //         )
+    //     }}
+    // ));
     definitions
 }
 

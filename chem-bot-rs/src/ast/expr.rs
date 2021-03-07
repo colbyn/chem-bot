@@ -143,6 +143,12 @@ impl Expr {
             Expr::float(10.0f64.powi(9)),
         ])
     }
+    pub fn megahertz() -> Self {
+        Expr::Product(vec![
+            Expr::hertz(),
+            Expr::int(1000000),
+        ])
+    }
     pub fn avogadro_number() -> Self {
         Expr::float(
             6.02214076f64 * (10.0f64).powi(23)
@@ -517,7 +523,7 @@ impl Expr {
                     .into_iter()
                     .map(|x| {
                         x   .simplify_impl()
-                            .unwrap_or(Expr::multiplicative_identity())
+                            .unwrap_or_else(|| unimplemented!())
                     })
                     .collect::<Vec<_>>();
                 let key_args = call.key_args
@@ -661,11 +667,14 @@ impl Expr {
 ///////////////////////////////////////////////////////////////////////////////
 
 pub fn main() {
-    let expr = Expr::from_str("mole(energy(photon(wavelength = nm(325))))").unwrap();
-    let result = expr.clone().eval();
-    println!("{:#?}", result.to_string());
+    // let expr = Expr::from_str("mole(energy(photon(wavelength = nm(325))))").unwrap();
+    // let result = expr.clone().eval();
+    // println!("{:#?}", result.to_string());
     // let expr = Expr::from_str("energy(photon(frequency = GHz(275)))").unwrap();
     // let result = expr.clone().eval();
     // println!("{:#?}", result.to_string());
+    let expr = Expr::from_str("wavelength(x = a(2))").unwrap();
+    let result = expr.clone().eval();
+    println!("{:#?}", result.to_string());
 }
 

@@ -44,26 +44,51 @@ pub fn is_uppercase(chr: char) -> bool {
     (chr as char).is_lowercase()
 }
 
-pub fn parse_literal_number(
-    source: &str
-) -> Result<(&str, isize), nom::Err<nom::error::Error<&str>>> {
-    let (source, mut subscript) = take_while1(|x: char| {
-        match x {
-            '0' => true,
-            '1' => true,
-            '2' => true,
-            '3' => true,
-            '4' => true,
-            '5' => true,
-            '6' => true,
-            '7' => true,
-            '8' => true,
-            '9' => true,
-            _ => false,
-        }
-    })(source)?;
-    let value = subscript.parse::<isize>().unwrap();
-    Ok((source, value))
+fn parse_integer(source: &str) -> IResult<&str, BigRational> {
+    let parser = recognize
+        (many1(terminated(one_of("0123456789"), many0(char('_')))));
+    let mut parser = map_res(parser, |x: &str| {
+        use std::str::FromStr;
+        BigRational::from_str(x)
+    });
+    parser(source)
+}
+
+fn parse_float(source: &str) -> IResult<&str, BigRational> {
+    fn decimal(source: &str) -> IResult<&str, &str> {
+        recognize(many1(terminated(one_of("0123456789"), many0(char('_')))))(source)
+    }
+    let parser = alt((
+        // Case one: .42
+        recognize(
+            tuple((
+                char('.'),
+                decimal,
+                opt(tuple((
+                    one_of("eE"),
+                    opt(one_of("+-")),
+                    decimal
+                )))
+            ))
+        )
+        , // Case two: 42e42 and 42.42e42
+        recognize(
+            tuple((
+                decimal,
+                opt(preceded(char('.'), decimal)),
+                one_of("eE"),
+                opt(one_of("+-")),
+                decimal
+            ))
+        )
+        , // Case three: 42. and 42.42
+        recognize(tuple(( decimal, char('.'), opt(decimal))))
+    ));
+    let mut parser = map_res(parser, |x: &str| {
+        use std::str::FromStr;
+        BigRational::from_str(x)
+    });
+    parser(source) 
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -78,8 +103,8 @@ fn parse_ast(source: &str) -> Result<(&str, Expr), nom::Err<nom::error::Error<&s
 }
 
 fn parse_literal(source: &str) -> Result<(&str, Expr), nom::Err<nom::error::Error<&str>>> {
-    let (source, literal) = parse_literal_number(source)?;
-    let ast = Expr::Num(BigRational::from_i64(literal as i64).unwrap());
+    let (source, literal) = alt((parse_integer, parse_float))(source)?;
+    let ast = Expr::Num(literal);
     Ok((source, ast))
 }
 

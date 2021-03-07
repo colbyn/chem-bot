@@ -6,7 +6,9 @@ macro_rules! return_fun_call {
     ($constr:expr, $expr:expr) => {{
         match $expr {
             Expr::Call(x) => x,
-            x => return $constr(x),
+            _ => {
+                return $constr
+            }
         }
     }};
 }
@@ -15,13 +17,19 @@ macro_rules! return_fun_call {
 macro_rules! return_fun_call_arg0 {
     ($constr:expr, $expr:expr) => {{
         match $expr {
-            Expr::Call(x) => {
-                match x.pos_args.get(0) {
-                    Some(x) => x.clone(),
-                    _ => return $constr($expr)
+            Expr::Call(fun_call) => {
+                match fun_call.pos_args.get(0) {
+                    Some(x) => {
+                        x.clone()
+                    }
+                    _ => {
+                        return $constr
+                    }
                 }
             }
-            x => return $constr(x),
+            _ => {
+                return $constr
+            }
         }
     }};
 }
@@ -30,8 +38,11 @@ macro_rules! return_fun_call_arg0 {
 macro_rules! return_some {
     ($expr:expr) => {
         match $expr {
-            Some(x) => return x,
-            None => ()
+            Some(x) => {
+                return x
+            }
+            None => {
+            }
         }
     };
 }
