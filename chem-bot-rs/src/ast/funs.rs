@@ -210,30 +210,30 @@ fn all_functions() -> Vec<FunctionDecl> {
             ])
         }
     ));
-    // definitions.push(defintion!(
-    //     GHz(argument value:BigRational) => {
-    //         Expr::Product(vec![
-    //             Expr::Num(value),
-    //             Expr::gigahertz()
-    //         ])
-    //     }
-    // ));
-    // definitions.push(defintion!(
-    //     MHz(argument value:BigRational) => {
-    //         Expr::Product(vec![
-    //             Expr::Num(value),
-    //             Expr::megahertz()
-    //         ])
-    //     }
-    // ));
-    // definitions.push(defintion!(
-    //     nm(argument value:BigRational) => {
-    //         Expr::Product(vec![
-    //             Expr::Num(value),
-    //             Expr::con("nm")
-    //         ])
-    //     }
-    // ));
+    definitions.push(defintion!(
+        GHz(argument value:BigRational) => {
+            Expr::Product(vec![
+                Expr::Num(value),
+                Expr::gigahertz()
+            ])
+        }
+    ));
+    definitions.push(defintion!(
+        MHz(argument value:BigRational) => {
+            Expr::Product(vec![
+                Expr::Num(value),
+                Expr::megahertz()
+            ])
+        }
+    ));
+    definitions.push(defintion!(
+        nm(argument value:BigRational) => {
+            Expr::Product(vec![
+                Expr::Num(value),
+                Expr::con("nm")
+            ])
+        }
+    ));
     // NOTE:
     // - Formula: `E = h * v` where `h` is planck's constant, and `v` is the photon's frequency.
     // - Speed of light: `c = λv` where `λ` is the photon's wavelength.
@@ -255,41 +255,41 @@ fn all_functions() -> Vec<FunctionDecl> {
     ));
     // Formula: `E = h * v` where `h` is planck's constant, and `v` is frequency (in hertz).
     // NOTE: Since `1㎐ = 1/s`, the seconds (s) cancels out.
-    // definitions.push(defintion!(
-    //     energy => photon(keyword frequency : Expr) => {{
-    //         Expr::Product(vec![
-    //             Expr::planck_constant(),
-    //             frequency
-    //         ])
-    //     }}
-    // ));
+    definitions.push(defintion!(
+        energy => photon(keyword frequency : Expr) => {{
+            Expr::Product(vec![
+                Expr::planck_constant(),
+                frequency
+            ])
+        }}
+    ));
     // NOTE:
     // - Formula: `v = c/λ` where
     //  * `λ` is the photon's wavelength
     //  * `v` is the photon's frequency.
     // - Speed of light: `c = λv` where `λ` is the photon's wavelength.
     // - Energy (alt): `E = h * v = (hc)/λ`
-    // definitions.push(defintion!(
-    //     frequency(keyword wavelength : Expr) => {{
-    //         unimplemented!()
-    //     }}
-    // ));
+    definitions.push(defintion!(
+        frequency(keyword wavelength : Expr) => {{
+            unimplemented!()
+        }}
+    ));
     // NOTE:
     // - Formula: `λ = c / ν` where
     //  * `λ` is the photon's wavelength
     //  * `v` is the photon's frequency.
     // - Speed of light: `c = λv` where `λ` is the photon's wavelength.
     // - Energy (alt): `E = h * v = (hc)/λ`
-    // definitions.push(defintion!(
-    //     wavelength(keyword frequency : Expr) => {{
-    //         let numerator = Expr::speed_of_light();
-    //         let denominator = frequency;
-    //         Expr::ratio(
-    //             numerator,
-    //             denominator,
-    //         )
-    //     }}
-    // ));
+    definitions.push(defintion!(
+        wavelength(keyword frequency : Expr) => {{
+            let numerator = Expr::speed_of_light();
+            let denominator = frequency;
+            Expr::ratio(
+                numerator,
+                denominator,
+            )
+        }}
+    ));
     definitions
 }
 
