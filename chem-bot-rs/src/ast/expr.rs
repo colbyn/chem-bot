@@ -661,11 +661,11 @@ impl Expr {
 ///////////////////////////////////////////////////////////////////////////////
 
 pub fn main() {
-    // let expr = Expr::from_str("mole(energy(photon(wavelength = nm(325))))").unwrap();
-    // let result = expr.clone().eval();
-    // println!("{:#?}", result.to_string());
-    let expr = Expr::from_str("energy(photon(frequency = GHz(275)))").unwrap();
+    let expr = Expr::from_str("mole(energy(photon(wavelength = nm(325))))").unwrap();
     let result = expr.clone().eval();
     println!("{:#?}", result.to_string());
+    // let expr = Expr::from_str("energy(photon(frequency = GHz(275)))").unwrap();
+    // let result = expr.clone().eval();
+    // println!("{:#?}", result.to_string());
 }
 
