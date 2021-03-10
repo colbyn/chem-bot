@@ -29,7 +29,7 @@ use nom::{
 use num::{FromPrimitive, ToPrimitive, BigRational};
 
 use crate::ast::expr::*;
-use crate::parser_utils::{self, identifier, parens, ws};
+use crate::parser_utils::{self, identifier, parens, ws, Error};
 
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -56,28 +56,53 @@ fn parse_number(source: &str) -> IResult<&str, BigRational> {
 // AST
 ///////////////////////////////////////////////////////////////////////////////
 
-fn parse_ast(source: &str) -> Result<(&str, Expr), nom::Err<nom::error::Error<&str>>> {
-    fn inner(source: &str) -> Result<(&str, Expr), nom::Err<nom::error::Error<&str>>> {
+fn parse_ast(source: &str) -> Result<(&str, Expr), Error<&str>> {
+    fn inner(source: &str) -> Result<(&str, Expr), Error<&str>> {
         alt((parse_function_call, parse_literal))(source)
     }
     ws(inner)(source)
 }
 
-fn parse_literal(source: &str) -> Result<(&str, Expr), nom::Err<nom::error::Error<&str>>> {
+fn parse_literal(source: &str) -> Result<(&str, Expr), Error<&str>> {
     let (source, literal) = parse_number(source)?;
     let ast = Expr::Num(literal);
     Ok((source, ast))
 }
 
-fn parse_function_call(source: &str) -> Result<(&str, Expr), nom::Err<nom::error::Error<&str>>> {
+// fn constant(source: &str) -> Result<(&str, Expr), Error<&str>> {
+//     fn reciprocal meter(source: &str) -> Result<(&str, Expr), Error<&str>> {
+//         unimplemented!()
+//     }
+//     let parser = alt(
+//         tag("m^-1"),
+//         tag("m^-1"),
+//     );
+//     parser(source)
+// }
+
+fn typed_literal(source: &str) -> Result<(&str, Expr), Error<&str>> {
+    let (source, literal) = parse_number(source)?;
+    let ast = Expr::Num(literal);
+    // Ok((source, ast))
+    unimplemented!()
+}
+
+fn parse_product(source: &str) -> Result<(&str, Expr), Error<&str>> {
+    // let (source, literal) = parse_number(source)?;
+    // let ast = Expr::Num(literal);
+    // Ok((source, ast))
+    unimplemented!()
+}
+
+fn parse_function_call(source: &str) -> Result<(&str, Expr), Error<&str>> {
     fn positional_argument(
         source: &str
-    ) -> Result<(&str, Expr), nom::Err<nom::error::Error<&str>>> {
+    ) -> Result<(&str, Expr), Error<&str>> {
         parse_ast(source)
     }
     fn keyword_argument(
         source: &str
-    ) -> Result<(&str, (String, Expr)), nom::Err<nom::error::Error<&str>>> {
+    ) -> Result<(&str, (String, Expr)), Error<&str>> {
         let (source, ident) = identifier(source)?;
         let (source, _) = ws(char('='))(source)?;
         let (source, ast) = parse_ast(source)?;
@@ -85,7 +110,7 @@ fn parse_function_call(source: &str) -> Result<(&str, Expr), nom::Err<nom::error
     }
     fn arguments(
         source: &str
-    ) -> Result<(&str, (Vec<Expr>, HashMap<String, Expr>)), nom::Err<nom::error::Error<&str>>> {
+    ) -> Result<(&str, (Vec<Expr>, HashMap<String, Expr>)), Error<&str>> {
         let (source, pos_args) = separated_list0(
             parser_utils::comma,
             positional_argument,
@@ -125,7 +150,7 @@ pub(crate) fn main() {
     // let source = std::fs::read_to_string("sample.txt").unwrap();
     // let result = run_parser(&source).unwrap();
     // println!("{:#?}", result);
-    let result = parse_ast("lorem(2)");
+    let result = parse_number("1.097e7 m^-1");
     println!("{:?}", result);
 }
 

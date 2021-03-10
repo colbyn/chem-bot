@@ -5,7 +5,7 @@ use std::iter::FromIterator;
 use std::path::{Path, PathBuf};
 use std::convert::AsRef;
 use std::collections::{HashMap, LinkedList, HashSet, VecDeque};
-use num::{FromPrimitive, ToPrimitive, BigRational};
+use num::{FromPrimitive, ToPrimitive, BigRational, BigInt};
 
 use crate::ast::expr::{Expr, FunCall};
 use crate::*;
@@ -22,6 +22,14 @@ impl ConvertTo<BigRational> for Expr {
     fn convert_to(&self) -> Option<BigRational> {
         match self {
             Expr::Num(x) => Some(x.clone()),
+            _ => None,
+        }
+    }
+}
+impl ConvertTo<BigInt> for Expr {
+    fn convert_to(&self) -> Option<BigInt> {
+        match self {
+            Expr::Num(x) => Some(x.to_integer()),
             _ => None,
         }
     }
@@ -125,39 +133,65 @@ impl FunctionDecl {
 /// Internal helper.
 #[macro_export]
 macro_rules! init_arg_header {
-    ($pos_counter:expr, $keyword_state:expr, argument $name:ident : $type:ty) => {
+    ($pos_counter:expr; $keyword_state:expr; argument $name:ident : $type:ty) => {
         $pos_counter = $pos_counter + 1;
     };
-    ($pos_counter:expr, $keyword_state:expr, keyword $name:ident : $type:ty) => {
+    ($pos_counter:expr; $keyword_state:expr; keyword $name:ident : $type:ty) => {
         $keyword_state.push(String::from(stringify!($name)));
+    };
+
+    ($pos_counter:expr; $keyword_state:expr; argument $name:ident : $type:ty, $($rest:tt)*) => {
+        $pos_counter = $pos_counter + 1;
+        init_arg_header!($pos_counter; $keyword_state; $($rest)*)
+    };
+    ($pos_counter:expr; $keyword_state:expr; keyword $name:ident : $type:ty, $($rest:tt)*) => {
+        $keyword_state.push(String::from(stringify!($name)));
+        init_arg_header!($pos_counter; $keyword_state; $($rest)*)
     };
 }
 
 #[macro_export]
 macro_rules! init_arg_scope {
-    ($pos_args:expr, $key_args:expr, argument $name:ident : $type:ty) => {
+    ($pos_args:expr; $key_args:expr; argument $name:ident : $type:ty) => {
         let $name: $type = $pos_args
             .pop_front()
             .and_then(|expr: Expr| -> Option<$type> {
                 expr.convert_to()
             })?;
     };
-    ($pos_args:expr, $key_args:expr, keyword $name:ident : $type:ty) => {
+    ($pos_args:expr; $key_args:expr; keyword $name:ident : $type:ty) => {
         let $name: $type = $key_args
             .get(stringify!($name))
             .and_then(|expr: &Expr| -> Option<$type> {
                 expr.convert_to()
             })?;
     };
+
+    ($pos_args:expr; $key_args:expr; argument $name:ident : $type:ty, $($rest:tt)*) => {
+        let $name: $type = $pos_args
+            .pop_front()
+            .and_then(|expr: Expr| -> Option<$type> {
+                expr.convert_to()
+            })?;
+        init_arg_scope!($pos_args; $key_args; $($rest)*)
+    };
+    ($pos_args:expr; $key_args:expr; keyword $name:ident : $type:ty, $($rest:tt)*) => {
+        let $name: $type = $key_args
+            .get(stringify!($name))
+            .and_then(|expr: &Expr| -> Option<$type> {
+                expr.convert_to()
+            })?;
+        init_arg_scope!($pos_args; $key_args; $($rest)*)
+    };
 }
 
 #[macro_export]
 macro_rules! defintion {
-    ($name:ident($($arg:tt)*$(,)?) => $body:expr) => {{
+    ($name:ident( $($arg:tt)* ) => $body:expr) => {{
         let name = String::from(stringify!($name));
         let mut pos_counter = 0;
         let mut keyword_state = Vec::<String>::new();
-        init_arg_header!(pos_counter, keyword_state, $($arg)*);
+        init_arg_header!(pos_counter; keyword_state; $($arg)*);
         let function_decl = FunctionDecl {
             path: vec![name],
             pos_args: pos_counter,
@@ -166,19 +200,39 @@ macro_rules! defintion {
                 |call: FunCall| -> Option<Expr> {
                     let mut pos_args: LinkedList<Expr> = LinkedList::from_iter(call.pos_args.clone());
                     let mut key_args: HashMap<String, Expr> = call.key_args.clone();
-                    init_arg_scope!(pos_args, key_args, $($arg)*);
-                    Some($body)
+                    init_arg_scope!(pos_args; key_args; $($arg)*);
+                    $body
                 }
             )),
         };
         function_decl
     }};
-    ($name1:ident => $name2:ident($($arg:tt)*$(,)?) => $body:expr) => {{
+    ($name:ident( $($arg:tt)* ) => $body:expr) => {{
+        let name = String::from(stringify!($name));
+        let mut pos_counter = 0;
+        let mut keyword_state = Vec::<String>::new();
+        init_arg_header!(pos_counter; keyword_state; $($arg)*);
+        let function_decl = FunctionDecl {
+            path: vec![name],
+            pos_args: pos_counter,
+            key_args: keyword_state,
+            body: Body(Rc::new(
+                |call: FunCall| -> Option<Expr> {
+                    let mut pos_args: LinkedList<Expr> = LinkedList::from_iter(call.pos_args.clone());
+                    let mut key_args: HashMap<String, Expr> = call.key_args.clone();
+                    init_arg_scope!(pos_args; key_args; $($arg)*);
+                    $body
+                }
+            )),
+        };
+        function_decl
+    }};
+    ($name1:ident => $name2:ident($($arg:tt)*) => $body:expr) => {{
         let name1 = String::from(stringify!($name1));
         let name2 = String::from(stringify!($name2));
         let mut pos_counter = 0;
         let mut keyword_state = Vec::<String>::new();
-        init_arg_header!(pos_counter, keyword_state, $($arg)*);
+        init_arg_header!(pos_counter; keyword_state; $($arg)*);
         let function_decl = FunctionDecl {
             path: vec![name1, name2],
             pos_args: pos_counter,
@@ -187,8 +241,8 @@ macro_rules! defintion {
                 |call: FunCall| -> Option<Expr> {
                     let mut pos_args: LinkedList<Expr> = LinkedList::from_iter(call.pos_args.clone());
                     let mut key_args: HashMap<String, Expr> = call.key_args.clone();
-                    init_arg_scope!(pos_args, key_args, $($arg)*);
-                    Some($body)
+                    init_arg_scope!(pos_args; key_args; $($arg)*);
+                    $body
                 }
             )),
         };
@@ -204,34 +258,34 @@ fn all_functions() -> Vec<FunctionDecl> {
     let mut definitions = Vec::new();
     definitions.push(defintion!(
         mole(argument value:Expr) => {
-            Expr::Product(vec![
+            Some(Expr::Product(vec![
                 value,
                 Expr::avogadro_number(),
-            ])
+            ]))
         }
     ));
     definitions.push(defintion!(
         GHz(argument value:BigRational) => {
-            Expr::Product(vec![
+            Some(Expr::Product(vec![
                 Expr::Num(value),
                 Expr::gigahertz()
-            ])
+            ]))
         }
     ));
     definitions.push(defintion!(
         MHz(argument value:BigRational) => {
-            Expr::Product(vec![
+            Some(Expr::Product(vec![
                 Expr::Num(value),
                 Expr::megahertz()
-            ])
+            ]))
         }
     ));
     definitions.push(defintion!(
         nm(argument value:BigRational) => {
-            Expr::Product(vec![
+            Some(Expr::Product(vec![
                 Expr::Num(value),
                 Expr::con("nm")
-            ])
+            ]))
         }
     ));
     // NOTE:
@@ -247,20 +301,20 @@ fn all_functions() -> Vec<FunctionDecl> {
                 Expr::planck_constant(),
             ]);
             let denominator = wavelength;
-            Expr::ratio(
+            Some(Expr::ratio(
                 numerator,
                 denominator,
-            )
+            ))
         }}
     ));
     // Formula: `E = h * v` where `h` is planck's constant, and `v` is frequency (in hertz).
     // NOTE: Since `1㎐ = 1/s`, the seconds (s) cancels out.
     definitions.push(defintion!(
         energy => photon(keyword frequency : Expr) => {{
-            Expr::Product(vec![
+            Some(Expr::Product(vec![
                 Expr::planck_constant(),
                 frequency
-            ])
+            ]))
         }}
     ));
     // NOTE:
@@ -284,10 +338,36 @@ fn all_functions() -> Vec<FunctionDecl> {
         wavelength(keyword frequency : Expr) => {{
             let numerator = Expr::speed_of_light();
             let denominator = frequency;
-            Expr::ratio(
+            Some(Expr::ratio(
                 numerator,
                 denominator,
-            )
+            ))
+        }}
+    ));
+    // NOTE:
+    // - Formula (Rydberg formula): `1/λ = R_h * (1/n_2 - 1/n_1))` where
+    // * `R_h` is Rydberg constant
+    //
+    definitions.push(defintion!(
+        energy(keyword from : Expr, keyword to : Expr) => {{
+            let f = defintion!(
+                electron(keyword n : BigInt) => {{
+                    Some(Expr::Num(BigRational::new(
+                        BigInt::from_i64(1).unwrap(),
+                        num::pow(n, 2),
+                    )))
+                }}
+            );
+            let from: BigRational = f.call(from)
+                .ok()?
+                .convert_to()?;
+            let to: BigRational = f.call(to)
+                .ok()?
+                .convert_to()?;
+            Some(Expr::Product(vec![
+                Expr::rydberg_constant(),
+                Expr::Num(from - to),
+            ]))
         }}
     ));
     definitions
@@ -318,10 +398,10 @@ pub fn main() {
     let expr = Expr::from_str("nm(250)").unwrap();
     let nm_decl = defintion!(
         nm(argument value:BigRational) => {
-            Expr::Product(vec![
+            Some(Expr::Product(vec![
                 Expr::Num(value),
                 Expr::con("nm")
-            ])
+            ]))
         }
     );
     let result = nm_decl.call(expr);
@@ -335,10 +415,10 @@ pub fn main() {
                 Expr::con("h"),
             ]);
             let denominator = wavelength;
-            Expr::ratio(
+            Some(Expr::ratio(
                 numerator,
                 denominator,
-            )
+            ))
         }}
     );
     // let result = decl1.call(expr);

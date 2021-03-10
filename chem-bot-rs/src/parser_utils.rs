@@ -22,6 +22,8 @@ use nom::{
     Parser,
 };
 
+pub type Error<T> = nom::Err<nom::error::Error<T>>;
+
 pub(crate) mod string {
     //! This example shows an example of how to parse an escaped string. The
     //! rules for the string are similar to JSON and rust. A string is:
@@ -35,8 +37,7 @@ pub(crate) mod string {
     //!   escape and the next non-whitespace character
     extern crate nom;
 
-    // #[global_allocator]
-    // static ALLOC: jemallocator::Jemalloc = jemallocator::Jemalloc;
+    use super::Error;
 
     use nom::branch::alt;
     use nom::bytes::streaming::{is_not, take_while_m_n};
@@ -194,7 +195,7 @@ pub(crate) mod string {
 
     pub(crate) fn parse_string(
         source: &str
-    ) -> Result<(&str, String), nom::Err<nom::error::Error<&str>>>
+    ) -> Result<(&str, String), Error<&str>>
     {
         match parse_string_impl(source) {
             Err(err) => Err(err),
@@ -211,12 +212,12 @@ pub(crate) fn parens<'a, F: 'a, O, E: ParseError<&'a str>>(
     delimited(char('('), inner, char(')'))
 }
 
-pub(crate) fn comma(source: &str) -> Result<(&str, &str), nom::Err<nom::error::Error<&str>>> {
+pub(crate) fn comma(source: &str) -> Result<(&str, &str), Error<&str>> {
     let (source, val) = ws(tag(","))(source)?;
     Ok((source, val))
 }
 
-pub(crate) fn identifier(source: &str) -> Result<(&str, String), nom::Err<nom::error::Error<&str>>> {
+pub(crate) fn identifier(source: &str) -> Result<(&str, String), Error<&str>> {
     let (source, ident) = recognize(
         pair(
             alt((alpha1, tag("_"))),

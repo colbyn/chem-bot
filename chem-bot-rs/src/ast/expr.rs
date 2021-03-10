@@ -154,6 +154,9 @@ impl Expr {
             6.02214076f64 * (10.0f64).powi(23)
         )
     }
+    pub fn rydberg_constant() -> Self {
+        Expr::con("Rₕ")
+    }
     pub fn from_file<P: AsRef<Path>>(path: P) -> Result<Expr, ()> {
         let path = path.as_ref();
         let source = std::fs::read_to_string(path).unwrap();
@@ -594,12 +597,20 @@ impl Expr {
                 Expr::con("s"),
             ])
         }
+        fn rydberg_constant() -> Expr {
+            let x: f64 = 1.09678f64 * 10.0f64.powi(7);
+            Expr::Product(vec![
+                Expr::float(x),
+                Expr::unit_fraction(Expr::con("m"))
+            ])
+        }
         self.trans(Rc::new(|value| {
             // println!("{:?}", value);
             match value {
                 Expr::Con(x) if &x == "c" => speed_of_light(),
                 Expr::Con(x) if &x == "nm" => nm(),
                 Expr::Con(x) if &x == "h" => planck_constant(),
+                x if x == Expr::rydberg_constant() => rydberg_constant(),
                 x => x
             }
         }))
@@ -694,8 +705,13 @@ pub fn main() {
     // let expr = Expr::from_str("energy(photon(frequency = GHz(275)))").unwrap();
     // let result = expr.clone().eval();
     // println!("{:#?}", result.to_string());
-    let expr = Expr::from_str("wavelength(frequency = MHz(72.5))").unwrap();
-    let result = expr.clone().eval();
-    println!("{:#?}", result.to_string());
+    // let expr = Expr::from_str("wavelength(frequency = MHz(72.5))").unwrap();
+    // let result = expr.clone().eval();
+    // println!("{:#?}", result.to_string());
+    // let expr = Expr::from_str("energy(from=electron(n=3), to=electron(n=4))").unwrap();
+    // let result = expr.clone().eval();
+    // println!("{:#?}", result.to_string());
+    // let expr = Expr::from_str("a(1.097e7 m^-1)").unwrap();
+    // println!("{:#?}", expr.to_string());
 }
 
