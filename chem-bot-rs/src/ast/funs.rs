@@ -344,32 +344,31 @@ fn all_functions() -> Vec<FunctionDecl> {
             ))
         }}
     ));
-    // NOTE:
-    // - Formula (Rydberg formula): `1/λ = R_h * (1/n_2 - 1/n_1))` where
-    // * `R_h` is Rydberg constant
-    //
-    definitions.push(defintion!(
-        energy(keyword from : Expr, keyword to : Expr) => {{
-            let f = defintion!(
-                electron(keyword n : BigInt) => {{
-                    Some(Expr::Num(BigRational::new(
-                        BigInt::from_i64(1).unwrap(),
-                        num::pow(n, 2),
-                    )))
-                }}
-            );
-            let from: BigRational = f.call(from)
-                .ok()?
-                .convert_to()?;
-            let to: BigRational = f.call(to)
-                .ok()?
-                .convert_to()?;
-            Some(Expr::Product(vec![
-                Expr::rydberg_constant(),
-                Expr::Num(from - to),
-            ]))
-        }}
-    ));
+    // // NOTE:
+    // // - Formula (Rydberg formula): `1/λ = R_h * (1/n_2 - 1/n_1))` where
+    // // * `R_h` is Rydberg constant
+    // definitions.push(defintion!(
+    //     energy(keyword from : Expr, keyword to : Expr) => {{
+    //         let f = defintion!(
+    //             electron(keyword n : BigInt) => {{
+    //                 Some(Expr::Num(BigRational::new(
+    //                     BigInt::from_i64(1).unwrap(),
+    //                     num::pow(n, 2),
+    //                 )))
+    //             }}
+    //         );
+    //         let from: BigRational = f.call(from)
+    //             .ok()?
+    //             .convert_to()?;
+    //         let to: BigRational = f.call(to)
+    //             .ok()?
+    //             .convert_to()?;
+    //         Some(Expr::Product(vec![
+    //             Expr::rydberg_constant(),
+    //             Expr::Num(from - to),
+    //         ]))
+    //     }}
+    // ));
     definitions
 }
 
