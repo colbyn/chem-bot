@@ -49,7 +49,17 @@ pub fn is_uppercase(chr: char) -> bool {
 
 fn parse_number(source: &str) -> Result<(&str, BigRational), Error<&str>> {
     let (source, val) = nom::number::complete::double(source)?;
-    let val = BigRational::from_f64(val).unwrap();
+    let mut val = BigRational::from_f64(val).unwrap();
+    fn exponent_parser(source: &str) -> Result<(&str, isize), Error<&str>> {
+        let (source, _) = char('^')(source)?;
+        let (source, number) = digit1(source)?;
+        let number = isize::from_str(number).unwrap();
+        Ok((source, number))
+    }
+    let (source, exp) = opt(exponent_parser)(source)?;
+    if let Some(exp) = exp {
+        val = val.pow(exp as i32);
+    }
     Ok((source, val))
 }
 
@@ -57,14 +67,14 @@ fn parse_number(source: &str) -> Result<(&str, BigRational), Error<&str>> {
 // AST
 ///////////////////////////////////////////////////////////////////////////////
 
-fn parse_ast(source: &str, full_consume: bool) -> Result<(&str, Expr), Error<&str>> {
+fn parse_ast(source: &str) -> Result<(&str, Expr), Error<&str>> {
     use nom::{eof, named};
     fn inner(source: &str) -> Result<(&str, Expr), Error<&str>> {
         let parsers = (
+            parse_product,
             parse_function_call,
             parse_constant,
             parse_literal,
-            parse_product,
         );
         alt(parsers)(source)
     }
@@ -78,13 +88,13 @@ fn parse_ast(source: &str, full_consume: bool) -> Result<(&str, Expr), Error<&st
     //     parser_utils::choice(parsers)(source)
     // }
     let (rest, value) = ws(inner)(source)?;
-    if !rest.is_empty() && full_consume {
-        let e: Error<&str> = nom::Err::Error(nom::error::Error::new(
-            source,
-            nom::error::ErrorKind::Verify
-        ));
-        return Err(e)
-    }
+    // if !rest.is_empty() {
+    //     let e: Error<&str> = nom::Err::Error(nom::error::Error::new(
+    //         source,
+    //         nom::error::ErrorKind::Verify
+    //     ));
+    //     return Err(e)
+    // }
     Ok((rest, value))
 }
 
@@ -130,7 +140,7 @@ fn parse_function_call(source: &str) -> Result<(&str, Expr), Error<&str>> {
     fn positional_argument(
         source: &str
     ) -> Result<(&str, Expr), Error<&str>> {
-        let (source, value) = parse_ast(source, false)?;
+        let (source, value) = parse_ast(source)?;
         let (source, _) = not(ws(char('=')))(source)?;
         Ok((source, value))
     }
@@ -139,7 +149,7 @@ fn parse_function_call(source: &str) -> Result<(&str, Expr), Error<&str>> {
     ) -> Result<(&str, (String, Expr)), Error<&str>> {
         let (source, ident) = identifier(source)?;
         let (source, _) = ws(char('='))(source)?;
-        let (source, ast) = parse_ast(source, false)?;
+        let (source, ast) = parse_ast(source)?;
         Ok((source, (ident, ast)))
     }
     fn arguments(
@@ -171,7 +181,7 @@ fn parse_function_call(source: &str) -> Result<(&str, Expr), Error<&str>> {
 ///////////////////////////////////////////////////////////////////////////////
 
 pub(crate) fn run_parser(source: &str) -> Result<Expr, ()> {
-    let (rest, result) = parse_ast(&source, false).unwrap();
+    let (rest, result) = parse_ast(&source).unwrap();
     if !rest.is_empty() {
         eprintln!("[error] unparsed source code!");
         eprintln!("\t☞ given: {}", source);
@@ -191,8 +201,31 @@ pub(crate) fn main() {
     // let source = std::fs::read_to_string("sample.txt").unwrap();
     // let result = run_parser(&source).unwrap();
     // println!("{:#?}", result);
-    let result = run_parser("mole(energy(photon(wavelength = nm(325))))");
+    // let result = run_parser("mole(energy(photon(wavelength = nm(325))))");
+    // let result = run_parser("J * 3.6808174042676e5");
+    let result = run_parser("7.80 * 10^5");
     println!("\nDONE");
     println!("{:#?}", result.map(|x| x.to_string()));
 }
 
+
+///////////////////////////////////////////////////////////////////////////////
+// TESTS
+///////////////////////////////////////////////////////////////////////////////
+
+
+#[cfg(test)]
+mod tests {
+    // Note this useful idiom: importing names from outer (for mod tests) scope.
+    use super::*;
+
+    #[test]
+    fn parser_samples() {
+        let run = |source: &str| {
+            Expr::from_str(source).expect("parser should not fail")
+        };
+        run("mole(energy(photon(wavelength = nm(325))))");
+        run("J * 3.6808174042676e5");
+        run("a(J * 1.0)");
+    }
+}
