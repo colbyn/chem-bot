@@ -17,7 +17,7 @@ use nom::{
     branch::alt,
     character::complete::{alpha1},
     character::complete::alphanumeric1,
-    combinator::{cut, map, opt},
+    combinator::{cut, map, opt, verify},
     error::{context, VerboseError},
     multi::{many0, many1},
     sequence::{preceded, terminated},
@@ -25,6 +25,7 @@ use nom::{
     multi::separated_list1,
     multi::separated_list0,
     Parser,
+    map,
 };
 use num::{FromPrimitive, ToPrimitive, BigRational};
 
@@ -46,10 +47,10 @@ pub fn is_uppercase(chr: char) -> bool {
     (chr as char).is_lowercase()
 }
 
-fn parse_number(source: &str) -> IResult<&str, BigRational> {
-    let (source, value) = float(source)?;
-    let number = BigRational::from_f32(value).unwrap();
-    Ok((source, number))
+fn parse_number(source: &str) -> Result<(&str, BigRational), Error<&str>> {
+    let (source, val) = nom::number::complete::double(source)?;
+    let val = BigRational::from_f64(val).unwrap();
+    Ok((source, val))
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -58,7 +59,13 @@ fn parse_number(source: &str) -> IResult<&str, BigRational> {
 
 fn parse_ast(source: &str) -> Result<(&str, Expr), Error<&str>> {
     fn inner(source: &str) -> Result<(&str, Expr), Error<&str>> {
-        alt((parse_function_call, parse_literal))(source)
+        let parsers = (
+            parse_product,
+            parse_function_call,
+            parse_constant,
+            parse_literal,
+        );
+        alt(parsers)(source)
     }
     ws(inner)(source)
 }
@@ -69,29 +76,36 @@ fn parse_literal(source: &str) -> Result<(&str, Expr), Error<&str>> {
     Ok((source, ast))
 }
 
-// fn constant(source: &str) -> Result<(&str, Expr), Error<&str>> {
-//     fn reciprocal meter(source: &str) -> Result<(&str, Expr), Error<&str>> {
-//         unimplemented!()
-//     }
-//     let parser = alt(
-//         tag("m^-1"),
-//         tag("m^-1"),
-//     );
-//     parser(source)
-// }
-
-fn typed_literal(source: &str) -> Result<(&str, Expr), Error<&str>> {
-    let (source, literal) = parse_number(source)?;
-    let ast = Expr::Num(literal);
-    // Ok((source, ast))
-    unimplemented!()
+fn parse_constant(source: &str) -> Result<(&str, Expr), Error<&str>> {
+    fn parse_reciprocal(source: &str) -> Result<(&str, bool), Error<&str>> {
+        let p = opt(tag("^-1"));
+        map(p, |x| x.is_some())(source)
+    }
+    let (source, constant) = nom::character::complete::alpha1(source)?;
+    let (source, has_reciprocal) = parse_reciprocal(source)?;
+    let ast = {
+        let expr = Expr::con(constant);
+        if has_reciprocal {
+            Expr::unit_fraction(expr)
+        } else {
+            expr
+        }
+    };
+    Ok((source, ast))
 }
 
 fn parse_product(source: &str) -> Result<(&str, Expr), Error<&str>> {
-    // let (source, literal) = parse_number(source)?;
-    // let ast = Expr::Num(literal);
-    // Ok((source, ast))
-    unimplemented!()
+    fn inner(source: &str) -> Result<(&str, Expr), Error<&str>> {
+        let parsers = (
+            parse_function_call,
+            parse_constant,
+            parse_literal,
+        );
+        alt(parsers)(source)
+    }
+    let (source, xs) = separated_list1(ws(char('*')), ws(inner))(source)?;
+    let ast = Expr::Product(xs);
+    Ok((source, ast))
 }
 
 fn parse_function_call(source: &str) -> Result<(&str, Expr), Error<&str>> {
@@ -150,7 +164,7 @@ pub(crate) fn main() {
     // let source = std::fs::read_to_string("sample.txt").unwrap();
     // let result = run_parser(&source).unwrap();
     // println!("{:#?}", result);
-    let result = parse_number("1.097e7 m^-1");
-    println!("{:?}", result);
+    // let result = run_parser("J * 3.6808174042676e5");
+    // println!("{:?}", result.map(|x| x.to_string()));
 }
 

@@ -711,7 +711,27 @@ pub fn main() {
     // let expr = Expr::from_str("energy(from=electron(n=3), to=electron(n=4))").unwrap();
     // let result = expr.clone().eval();
     // println!("{:#?}", result.to_string());
-    // let expr = Expr::from_str("a(1.097e7 m^-1)").unwrap();
+    // let expr = Expr::from_str("a(1.097e7 * m^-1)").unwrap();
     // println!("{:#?}", expr.to_string());
+}
+
+
+///////////////////////////////////////////////////////////////////////////////
+// TESTS
+///////////////////////////////////////////////////////////////////////////////
+
+
+#[cfg(test)]
+mod tests {
+    // Note this useful idiom: importing names from outer (for mod tests) scope.
+    use super::*;
+
+    #[test]
+    fn test1() {
+        let expr = Expr::from_str("mole(energy(photon(wavelength = nm(325))))").unwrap();
+        let result = expr.clone().eval();
+        let expected = Expr::from_str("J * 3.6808174042676e5").unwrap();
+        assert_eq!(result, expected);
+    }
 }
 
