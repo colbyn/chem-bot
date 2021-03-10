@@ -325,7 +325,12 @@ fn all_functions() -> Vec<FunctionDecl> {
     // - Energy (alt): `E = h * v = (hc)/λ`
     definitions.push(defintion!(
         frequency(keyword wavelength : Expr) => {{
-            unimplemented!()
+            let numerator = Expr::speed_of_light();
+            let denominator = wavelength;
+            Some(Expr::ratio(
+                numerator,
+                denominator,
+            ))
         }}
     ));
     // NOTE:
@@ -342,6 +347,11 @@ fn all_functions() -> Vec<FunctionDecl> {
                 numerator,
                 denominator,
             ))
+        }}
+    ));
+    definitions.push(defintion!(
+        period(keyword frequency : Expr) => {{
+            Some(Expr::unit_fraction(frequency))
         }}
     ));
     // // NOTE:

@@ -87,11 +87,31 @@ pub struct FunCall {
     pub key_args: HashMap<String, Expr>,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub enum Symbol {
+    Con(String),
+    Var(String),
+}
+
+impl Symbol {
+    pub fn id(&self) -> &str {
+        match self {
+            Symbol::Con(x) => x,
+            Symbol::Var(x) => x,
+        }
+    }
+    pub fn is_con_id(&self, con: &str) -> bool {
+        match self {
+            Symbol::Con(x) => x == con,
+            Symbol::Var(_) => false,
+        }
+    }
+}
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Expr {
     Num(BigRational),
-    Con(String),
+    Sym(Symbol),
     /// 1/x
     Fraction(Box<Expr>),
     Product(Vec<Expr>),
@@ -107,7 +127,12 @@ impl Expr {
         let x = x.into();
         Expr::Num(BigRational::from_f64(x).unwrap())
     }
-    pub fn con(x: &str) -> Self {Expr::Con(x.to_owned())}
+    pub fn con(x: &str) -> Self {
+        Expr::Sym(Symbol::Con(x.to_owned()))
+    }
+    pub fn var(x: &str) -> Self {
+        Expr::Sym(Symbol::Var(x.to_owned()))
+    }
     pub fn ratio(numerator: Expr, denominator: Expr) -> Self {
         Expr::Product(vec![
             numerator,
@@ -189,9 +214,9 @@ impl Expr {
             _ => false
         }
     }
-    pub fn is_con(&self) -> bool {
+    pub fn is_sym(&self) -> bool {
         match self {
-            Expr::Con(_) => true,
+            Expr::Sym(_) => true,
             _ => false
         }
     }
@@ -205,16 +230,16 @@ impl Expr {
             _ => None
         }
     }
-    fn unpack_con(&self) -> Option<String> {
+    fn unpack_sym_id(&self) -> Option<&str> {
         match self {
-            Expr::Con(x) => Some(x.clone()),
+            Expr::Sym(x) => Some(x.id()),
             _ => None
         }
     }
     pub fn is_multiplicative_identity(&self) -> bool {
         match self {
             Expr::Num(x) => *x == BigRational::from_i32(1).unwrap(),
-            Expr::Con(_) => false,
+            Expr::Sym(_) => false,
             Expr::Fraction(x) => x.is_multiplicative_identity(),
             Expr::Product(xs) => xs.iter().all(|x| x.is_multiplicative_identity()),
             Expr::Call(_) => false,
@@ -226,7 +251,7 @@ impl Expr {
     pub fn trans(self, f: Rc<dyn Fn(Expr) -> Expr>) -> Expr {
         let result = match self {
             Expr::Num(x) => Expr::Num(x),
-            Expr::Con(x) => Expr::Con(x),
+            Expr::Sym(x) => Expr::Sym(x),
             Expr::Fraction(x) => Expr::Fraction(Box::new(x.trans(f.clone()))),
             Expr::Product(xs) => Expr::Product(
                 xs  .into_iter()
@@ -268,8 +293,8 @@ impl Expr {
                 let den = x.denom().clone();
                 Expr::Num(BigRational::new(den, num))
             },
-            Expr::Con(x) => Expr::Fraction(Box::new(
-                Expr::Con(x.clone())
+            Expr::Sym(x) => Expr::Fraction(Box::new(
+                Expr::Sym(x.clone())
             )),
             Expr::Fraction(bot) => *bot.clone(),
             Expr::Product(xs) => {
@@ -342,7 +367,7 @@ impl Expr {
         }
         match (self, other) {
             (Expr::Num(x), Expr::Num(y)) => {x == y}
-            (Expr::Con(x), Expr::Con(y)) => {x == y}
+            (Expr::Sym(x), Expr::Sym(y)) => {x == y}
             (Expr::Fraction(x), Expr::Fraction(y)) => {x.is_equal(y)}
             (Expr::Product(xs), Expr::Product(ys)) => match_xs_ys(xs, ys),
             (Expr::Call(x), Expr::Call(y)) if x.name == y.name => {
@@ -358,7 +383,7 @@ impl Expr {
             }
             // FALSE
             (Expr::Num(_), _) => false,
-            (Expr::Con(_), _) => false,
+            (Expr::Sym(_), _) => false,
             (Expr::Fraction(_), _) => false,
             (Expr::Product(_), _) => false,
             (Expr::Call(_), _) => false,
@@ -369,8 +394,8 @@ impl Expr {
             Expr::Num(x) => {
                 sink.push(Expr::Num(x));
             }
-            Expr::Con(x) => {
-                sink.push(Expr::Con(x));
+            Expr::Sym(x) => {
+                sink.push(Expr::Sym(x));
             }
             Expr::Fraction(bot) => {
                 let mut xs = Vec::new();
@@ -487,9 +512,9 @@ impl Expr {
                     )
                 ));
                 return_some!(if_match_(
-                    left.unpack_con(),
-                    right.unpack_con(),
-                    |left, right| match (left.as_str(), right.as_str()) {
+                    left.unpack_sym_id(),
+                    right.unpack_sym_id(),
+                    |left, right| match (left, right) {
                         ("Hz", "s") => Some((
                             Expr::multiplicative_identity(),
                             Expr::multiplicative_identity(),
@@ -498,9 +523,9 @@ impl Expr {
                     }
                 ));
                 return_some!(if_match_(
-                    left.reciprocal().unpack_con(),
-                    right.reciprocal().unpack_con(),
-                    |left, right| match (left.as_str(), right.as_str()) {
+                    left.reciprocal().unpack_sym_id(),
+                    right.reciprocal().unpack_sym_id(),
+                    |left, right| match (left, right) {
                         ("Hz", "s") => Some((
                             Expr::multiplicative_identity(),
                             Expr::multiplicative_identity(),
@@ -517,7 +542,7 @@ impl Expr {
     fn simplify_impl(self) -> Option<Self> {
         match self {
             Expr::Num(x) => Some(Expr::Num(x)),
-            Expr::Con(x) => Some(Expr::Con(x)),
+            Expr::Sym(x) => Some(Expr::Sym(x)),
             Expr::Fraction(bot) => {
                 let bot = bot
                     .simplify_impl()
@@ -566,7 +591,7 @@ impl Expr {
     fn simplify(self) -> Self {
         self.simplify_impl().unwrap_or(Expr::multiplicative_identity())
     }
-    pub fn expand_constants(self) -> Self {
+    fn expand_constants(self) -> Self {
         // 10e-9
         fn ten_to_neg_9() -> Expr {
             Expr::ratio(
@@ -605,11 +630,10 @@ impl Expr {
             ])
         }
         self.trans(Rc::new(|value| {
-            // println!("{:?}", value);
             match value {
-                Expr::Con(x) if &x == "c" => speed_of_light(),
-                Expr::Con(x) if &x == "nm" => nm(),
-                Expr::Con(x) if &x == "h" => planck_constant(),
+                Expr::Sym(x) if x.is_con_id("c") => speed_of_light(),
+                Expr::Sym(x) if x.is_con_id("nm") => nm(),
+                Expr::Sym(x) if x.is_con_id("h") => planck_constant(),
                 x if x == Expr::rydberg_constant() => rydberg_constant(),
                 x => x
             }
@@ -636,11 +660,10 @@ impl Expr {
                     format!("{:e}", x)
                 })
             }
-            Expr::Con(x) => {
-                x.clone()
-            }
-            Expr::Fraction(x) if x.is_con() => {
-                let name = x.unpack_con().unwrap();
+            Expr::Sym(Symbol::Con(x)) => x.clone(),
+            Expr::Sym(Symbol::Var(x)) => x.clone(),
+            Expr::Fraction(x) if x.is_sym() => {
+                let name = x.unpack_sym_id().unwrap();
                 format!("{}⁻¹", name)
             }
             Expr::Fraction(bot) => {
@@ -705,11 +728,12 @@ impl std::fmt::Display for Expr {
 ///////////////////////////////////////////////////////////////////////////////
 
 pub fn main() {
-    let run = |source: &str| {
+    let run = |desc: &str, source: &str| {
         let result = Expr::from_str(source)
             .unwrap()
             .eval();
-        println!("{}", result.to_string());
+        println!("RUN: {}", desc);
+        println!("\t{}", result.to_string());
     };
     // let expr = Expr::from_str("mole(energy(photon(wavelength = nm(325))))").unwrap();
     // let result = expr.clone().eval();
@@ -723,7 +747,11 @@ pub fn main() {
     // let expr = Expr::from_str("energy(from=electron(n=3), to=electron(n=4))").unwrap();
     // let result = expr.clone().eval();
     // println!("{:#?}", result.to_string());
-    let expr = run("7.80 * 10^5");
+    run("energy of one mole of photons given wavelength", "mole(energy(photon(wavelength = nm(325))))");
+    run("energy of photon given wavelength", "energy(photon(wavelength = nm(325)))");
+    run("energy of photon given frequency", "energy(photon(frequency = GHz(275)))");
+    run("wavelength from frequency", "wavelength(frequency = MHz(72.5))");
+    run("frequency from wavelength", "frequency(wavelength = nm(325))");
 }
 
 
@@ -732,17 +760,19 @@ pub fn main() {
 ///////////////////////////////////////////////////////////////////////////////
 
 
-// #[cfg(test)]
-// mod tests {
-//     // Note this useful idiom: importing names from outer (for mod tests) scope.
-//     use super::*;
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-//     #[test]
-//     fn test1() {
-//         let expr = Expr::from_str("mole(energy(photon(wavelength = nm(325))))").unwrap();
-//         let result = expr.clone().eval().to_string();
-//         let expected = Expr::from_str("J * 3.6808174042676e5").unwrap().to_string();
-//         assert_eq!(result, expected);
-//     }
-// }
+    #[test]
+    fn basics() {
+        let run = |source: &str, expected: Expr| {
+            Expr::from_str(source).unwrap().eval()
+        };
+        run(
+            "period(frequency = f)",
+            Expr::unit_fraction(Expr::con("f"))
+        );
+    }
+}
 
