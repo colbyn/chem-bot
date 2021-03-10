@@ -209,7 +209,65 @@ pub(crate) fn parens<'a, F: 'a, O, E: ParseError<&'a str>>(
 ) -> impl FnMut(&'a str) -> Result<(&'a str, O), nom::Err<E>>
     where F: Fn(&'a str) -> Result<(&'a str, O), nom::Err<E>>
 {
-    delimited(char('('), inner, char(')'))
+    move |source: &str| {
+        let (source, _) = char('(')(source)?;
+        let (source, value) = inner(source)?;
+        let (source, _) = char(')')(source)?;
+        Ok((source, value))
+    }
+}
+
+pub(crate) fn choice<'a, F: 'a, O, E: ParseError<&'a str>>(
+    parsers: &'static [F]
+) -> impl FnMut(&'a str) -> Result<(&'a str, O), Error<&str>>
+    where
+        F: Fn(&'a str) -> Result<(&'a str, O), nom::Err<E>>,
+        O: std::fmt::Debug,
+        O: std::fmt::Display
+{
+    move |source: &'a str| -> Result<(&'a str, O), Error<&str>> {
+        // let mut result: Option<O> = None;
+        // let mut errors = Vec::new();
+        // let mut matches: Vec<(&str, O)> = Vec::new();
+        for f in parsers.to_owned() {
+            match f(source) {
+                Ok(x) => {
+                    // println!("{:?} -> {:?} , {}", source, x.0, x.1);
+                    return Ok(x)
+                    // matches.push(x);
+                    // return Ok(x);
+                }
+                Err(_) => ()
+            }
+        }
+        // let mut last: Option<(&str, O)> = None;
+        // println!("LENGTH: {}", matches.len());
+        // for res in matches.iter() {
+        //     println!("REST: {}", res.0);
+        // }
+        // for res in matches {
+        //     // println!("{}\t-->\t{:?} <-> {:?}", source, res.0, res.1);
+        //     let last_len = match last {
+        //         Some((x, _)) => x.len(),
+        //         _ => 0
+        //     };
+        //     if res.0.len() <= last_len {
+        //         last = Some(res);
+        //     }
+        //     // return Ok(res);
+        // }
+        // println!("*******************");
+        // match last {
+        //     Some(x) => return Ok(x),
+        //     _ => ()
+        // }
+        let e: Error<&str> = nom::Err::Error(nom::error::Error::new(
+            source,
+            nom::error::ErrorKind::Alt
+        ));
+        // println!("PASSED: {}", source);
+        Err(e)
+    }
 }
 
 pub(crate) fn comma(source: &str) -> Result<(&str, &str), Error<&str>> {

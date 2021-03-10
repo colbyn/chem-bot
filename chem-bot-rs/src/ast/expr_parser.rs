@@ -17,7 +17,7 @@ use nom::{
     branch::alt,
     character::complete::{alpha1},
     character::complete::alphanumeric1,
-    combinator::{cut, map, opt, verify},
+    combinator::{cut, map, opt, verify, not},
     error::{context, VerboseError},
     multi::{many0, many1},
     sequence::{preceded, terminated},
@@ -57,17 +57,35 @@ fn parse_number(source: &str) -> Result<(&str, BigRational), Error<&str>> {
 // AST
 ///////////////////////////////////////////////////////////////////////////////
 
-fn parse_ast(source: &str) -> Result<(&str, Expr), Error<&str>> {
+fn parse_ast(source: &str, full_consume: bool) -> Result<(&str, Expr), Error<&str>> {
+    use nom::{eof, named};
     fn inner(source: &str) -> Result<(&str, Expr), Error<&str>> {
         let parsers = (
-            parse_product,
             parse_function_call,
             parse_constant,
             parse_literal,
+            parse_product,
         );
         alt(parsers)(source)
     }
-    ws(inner)(source)
+    // fn inner(source: &str) -> Result<(&str, Expr), Error<&str>> {
+    //     let parsers = &[
+    //         parse_function_call,
+    //         parse_literal,
+    //         parse_constant,
+    //         parse_product,
+    //     ];
+    //     parser_utils::choice(parsers)(source)
+    // }
+    let (rest, value) = ws(inner)(source)?;
+    if !rest.is_empty() && full_consume {
+        let e: Error<&str> = nom::Err::Error(nom::error::Error::new(
+            source,
+            nom::error::ErrorKind::Verify
+        ));
+        return Err(e)
+    }
+    Ok((rest, value))
 }
 
 fn parse_literal(source: &str) -> Result<(&str, Expr), Error<&str>> {
@@ -112,14 +130,16 @@ fn parse_function_call(source: &str) -> Result<(&str, Expr), Error<&str>> {
     fn positional_argument(
         source: &str
     ) -> Result<(&str, Expr), Error<&str>> {
-        parse_ast(source)
+        let (source, value) = parse_ast(source, false)?;
+        let (source, _) = not(ws(char('=')))(source)?;
+        Ok((source, value))
     }
     fn keyword_argument(
         source: &str
     ) -> Result<(&str, (String, Expr)), Error<&str>> {
         let (source, ident) = identifier(source)?;
         let (source, _) = ws(char('='))(source)?;
-        let (source, ast) = parse_ast(source)?;
+        let (source, ast) = parse_ast(source, false)?;
         Ok((source, (ident, ast)))
     }
     fn arguments(
@@ -151,7 +171,14 @@ fn parse_function_call(source: &str) -> Result<(&str, Expr), Error<&str>> {
 ///////////////////////////////////////////////////////////////////////////////
 
 pub(crate) fn run_parser(source: &str) -> Result<Expr, ()> {
-    let (rest, result) = parse_ast(&source).unwrap();
+    let (rest, result) = parse_ast(&source, false).unwrap();
+    if !rest.is_empty() {
+        eprintln!("[error] unparsed source code!");
+        eprintln!("\t☞ given: {}", source);
+        eprintln!("\t✔︎ parsed: {:?}", result);
+        eprintln!("\t✘ unparsed: {:?}", rest);
+        eprintln!("");
+    }
     assert!(rest.is_empty());
     Ok(result)
 }
@@ -164,7 +191,8 @@ pub(crate) fn main() {
     // let source = std::fs::read_to_string("sample.txt").unwrap();
     // let result = run_parser(&source).unwrap();
     // println!("{:#?}", result);
-    // let result = run_parser("J * 3.6808174042676e5");
-    // println!("{:?}", result.map(|x| x.to_string()));
+    let result = run_parser("mole(energy(photon(wavelength = nm(325))))");
+    println!("\nDONE");
+    println!("{:#?}", result.map(|x| x.to_string()));
 }
 
