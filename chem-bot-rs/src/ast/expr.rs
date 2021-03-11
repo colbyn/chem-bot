@@ -128,7 +128,7 @@ impl Matrix {
             }
             let column = column.join(",");
             rows.push(format!(
-                "{}",
+                "  │{}│",
                 column
             ));
         }
@@ -151,13 +151,11 @@ impl std::fmt::Debug for Matrix {
                     .map(|x| format!("{:?}", x))
                     .collect::<Vec<_>>()
                     .join(",");
-                format!("[{}]", row)
+                format!("  [{}]", row)
             })
             .collect::<Vec<_>>()
             .join(",\n");
-        // f.debug_list().entries(rows)
-        //     .finish()
-        write!(f, "{}", rows)
+        write!(f, "[\n{}\n]", rows)
     }
 }
 
@@ -822,12 +820,21 @@ impl std::fmt::Debug for Expr {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Expr::Num(x) => {
+                let zero = BigInt::from_f64(0.0).unwrap();
+                let one = BigInt::from_f64(1.0).unwrap();
                 let check = |x: &BigInt, max_len| {
                    format!("{}", x).len() > max_len && &x.abs() == x
                 };
                 if check(x.numer(), 2) || check(x.denom(), 3) {
                     write!(f, "Expr::Num({})", x.to_f64().unwrap())
-                } else {
+                }
+                else if x.numer() == &zero {
+                    write!(f, "Expr::Num(0)")
+                }
+                else if x.numer() == &one && x.denom() == &one {
+                    write!(f, "Expr::Num(1)")
+                }
+                else {
                     write!(f, "Expr::Num({}, {})", x.numer(), x.denom())
                 }
             }
@@ -862,7 +869,7 @@ impl std::fmt::Debug for Expr {
 // DEV
 ///////////////////////////////////////////////////////////////////////////////
 
-pub fn main() {
+pub fn dev() {
     let run = |desc: &str, source: &str| {
         let result = Expr::from_str(source)
             .unwrap()
@@ -905,13 +912,13 @@ pub fn main() {
 }
 
 
-// pub fn main() {
-//     let matrix = matrix!{
-//         (Expr::int(1)), (Expr::int(0)), (Expr::int(0));
-//         (Expr::int(0)), (Expr::int(1)), (Expr::int(0));
-//     };
-//     println!("{:#?}", matrix);
-// }
+pub fn main() {
+    let matrix = matrix!{
+        (Expr::int(1)), (Expr::int(0)), (Expr::int(0));
+        (Expr::int(0)), (Expr::int(1)), (Expr::int(0));
+    };
+    println!("{}", matrix);
+}
 
 ///////////////////////////////////////////////////////////////////////////////
 // TESTS

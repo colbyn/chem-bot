@@ -89,7 +89,7 @@ macro_rules! matrix {
     ($($x:tt)*) => {{
         let mut rows: LinkedList<LinkedList<Expr>> = LinkedList::new();
         matrix_rows!(rows;; $($x)*);
-        Matrix::from_rows(rows)
+        Matrix::from_rows(rows).unwrap()
     }};
 }
 
