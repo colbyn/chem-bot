@@ -28,20 +28,20 @@ pub struct IndexPosition {
 
 
 ///////////////////////////////////////////////////////////////////////////////
-// MATRIX DATA TYPES
+// BASIC TYPES
 ///////////////////////////////////////////////////////////////////////////////
 
 #[derive(Clone, PartialEq)]
 pub struct Column(Vec<Number>);
+
+impl Column {
+    pub fn transpose(self) -> Row {
+        Row(self.0)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct Row(Vec<Number>);
-
-impl From<Column> for Vec<Number> {
-    fn from(x: Column) -> Self {x.0}
-}
-impl From<Row> for Vec<Number> {
-    fn from(x: Row) -> Self {x.0}
-}
 
 impl Row {
     pub fn max(&self) -> Number {
@@ -86,7 +86,22 @@ impl Row {
             .collect();
         Row(xs)
     }
+    pub fn transpose(self) -> Column {
+        Column(self.0)
+    }
 }
+
+impl From<Column> for Vec<Number> {
+    fn from(x: Column) -> Self {x.0}
+}
+impl From<Row> for Vec<Number> {
+    fn from(x: Row) -> Self {x.0}
+}
+
+
+///////////////////////////////////////////////////////////////////////////////
+// MATRIX TYPES
+///////////////////////////////////////////////////////////////////////////////
 
 /// A dynamic matrix in **row major order**.
 #[derive(Clone, PartialEq)]
