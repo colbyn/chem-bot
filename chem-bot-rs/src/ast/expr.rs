@@ -78,9 +78,12 @@ fn for_each(
 // MATRIX DATA TYPE
 ///////////////////////////////////////////////////////////////////////////////
 
+#[derive(Clone, PartialEq)]
+struct Row(LinkedList<Expr>);
+
 /// A dynamic matrix in **row major order**.
 #[derive(Clone, PartialEq)]
-pub struct Matrix(LinkedList<LinkedList<Expr>>);
+pub struct Matrix(LinkedList<Row>);
 
 impl Matrix {
     pub fn new() -> Self {Matrix(Default::default())}
@@ -97,6 +100,10 @@ impl Matrix {
                 }
             }
         }
+        let rows = rows
+            .into_iter()
+            .map(Row)
+            .collect();
         if all_valid {
             Some(Matrix(rows))
         } else {
@@ -104,7 +111,7 @@ impl Matrix {
         }
     }
     pub fn append_row<T: Into<LinkedList<Expr>>>(&mut self, row: T) {
-        self.0.push_back(row.into());
+        self.0.push_back(Row(row.into()));
     }
     pub fn append_column<T: Into<LinkedList<Expr>>>(
         &mut self,
@@ -116,7 +123,7 @@ impl Matrix {
             let node = column
                 .pop_front()
                 .unwrap_or_else(on_empty);
-            row.push_back(node);
+            row.0.push_back(node);
         }
     }
     pub fn to_string(&self) -> String {
@@ -124,7 +131,7 @@ impl Matrix {
         let mut max_column_len = 0;
         for row in self.0.iter() {
             let mut column = Vec::<String>::new();
-            for expr in row.iter() {
+            for expr in row.0.iter() {
                 column.push(expr.to_string());
             }
             let column = column.join(", ");
@@ -140,6 +147,12 @@ impl Matrix {
         }
         rows.join("\n")
     }
+    pub fn rref(&self) -> Self {
+        for row in self.0.iter() {
+            
+        }
+        unimplemented!()
+    }
 }
 
 impl std::fmt::Display for Matrix {
@@ -153,7 +166,7 @@ impl std::fmt::Debug for Matrix {
         let mut rows = self.0
             .iter()
             .map(|row| -> String {
-                let row = row.iter()
+                let row = row.0.iter()
                     .map(|x| format!("{:?}", x))
                     .collect::<Vec<_>>()
                     .join(",");
@@ -919,9 +932,9 @@ pub fn dev() {
 
 
 pub fn main() {
-    let matrix = matrix!{
-        Expr::int(1), Expr::int(0), Expr::int(0);
-        Expr::int(0), Expr::int(1), Expr::var("xx");
+    let matrix: Matrix = matrix!{
+        Expr::int(8), Expr::int(2), Expr::int(2);
+        Expr::int(9), Expr::int(1), Expr::int(1);
     };
     println!("{}", matrix);
 }
