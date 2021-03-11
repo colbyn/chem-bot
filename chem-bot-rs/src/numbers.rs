@@ -29,6 +29,30 @@ impl Number {
         Number(BigRational::new(d, n))
     }
     pub fn abs(&self) -> Self {Number(self.0.abs())}
+    pub fn sign(&self) -> isize {
+        use num::bigint::Sign;
+        let n = self.0.numer().sign();
+        let d = self.0.denom().sign();
+        let x = n * d;
+        match x {
+            Sign::Minus => -1,
+            Sign::Plus => 1,
+            Sign::NoSign => 1,
+        }
+    }
+    pub fn numerator(&self) -> Option<isize> {
+        self.0.numer().to_isize()
+    }
+    pub fn denominator(&self) -> Option<isize> {
+        self.0.denom().to_isize()
+    }
+    pub fn unpack_integer(&self) -> Option<isize> {
+        if self.denominator()? == 1 {
+            self.numerator()
+        } else {
+            None
+        }
+    }
 }
 
 impl std::ops::Add for Number {

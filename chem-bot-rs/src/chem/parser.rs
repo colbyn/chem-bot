@@ -23,6 +23,7 @@ use nom::{
 };
 use crate::chem::data::*;
 use crate::parser_utils::{identifier, parens, ws};
+use crate::numbers::Number;
 
 pub fn parse_state(source: &str) -> Result<(&str, State), nom::Err<nom::error::Error<&str>>> {
     let mut parser = alt((
@@ -69,7 +70,7 @@ pub fn parse_unit(source: &str) -> Result<(&str, Node), nom::Err<nom::error::Err
     );
     Ok((source, value))
 }
-pub fn parse_num(source: &str) -> Result<(&str, usize), nom::Err<nom::error::Error<&str>>> {
+pub fn parse_num(source: &str) -> Result<(&str, Number), nom::Err<nom::error::Error<&str>>> {
     let (source, mut subscript) = take_while(|x: char| {
         match x {
             '0' => true,
@@ -88,7 +89,9 @@ pub fn parse_num(source: &str) -> Result<(&str, usize), nom::Err<nom::error::Err
     if subscript.is_empty() {
         subscript = "1";
     }
-    Ok((source, subscript.parse::<usize>().unwrap()))
+    let number = subscript.parse::<i128>().unwrap();
+    let number = Number::int(number);
+    Ok((source, number))
 }
 pub fn parse_parens(source: &str) -> Result<(&str, Node), nom::Err<nom::error::Error<&str>>> {
     fn inner_parser(source: &str) -> Result<(&str, Vec<Node>), nom::Err<nom::error::Error<&str>>> {
@@ -103,7 +106,7 @@ pub fn parse_group(source: &str) -> Result<(&str, Node), nom::Err<nom::error::Er
     let (source, coefficient) = opt(parse_num)(source)?;
     let (source, values) = many1(alt((parse_parens, parse_unit)))(source)?;
     let (source, state) = opt(parse_state)(source)?;
-    let value = Node::Chunk(coefficient.unwrap_or(1), values, state);
+    let value = Node::Chunk(coefficient.unwrap_or(Number::int(1)), values, state);
     Ok((source, value))
 }
 

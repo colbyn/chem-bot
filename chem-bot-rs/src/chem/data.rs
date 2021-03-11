@@ -11,8 +11,8 @@ use crate::matrix::{Matrix, Row, Column};
 // BASICS
 ///////////////////////////////////////////////////////////////////////////////
 
-type Coefficient = usize;
-type Subscript = usize;
+type Coefficient = Number;
+type Subscript = Number;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
 pub struct Element(pub String);
@@ -51,25 +51,32 @@ pub enum Node {
 
 impl Node {
     pub fn to_string(&self) -> String {
-        fn fancy_unicode(x: usize) -> String {
-            format!("{}", x)
-                .chars()
-                .map(|x: char| {
-                    match x {
-                        '0' => '₀',
-                        '1' => '₁',
-                        '2' => '₂',
-                        '3' => '₃',
-                        '4' => '₄',
-                        '5' => '₅',
-                        '6' => '₆',
-                        '7' => '₇',
-                        '8' => '₈',
-                        '9' => '₉',
-                        x => x,
-                    }
-                })
-                .collect::<String>()
+        fn fancy_unicode_subscript(x: &Number) -> String {
+            let sign = x.sign();
+            let num = x.numerator().unwrap().abs();
+            let den = x.denominator().unwrap().abs();
+            if den == 1 {
+                format!("{}", num)
+                    .chars()
+                    .map(|x: char| {
+                        match x {
+                            '0' => '₀',
+                            '1' => '₁',
+                            '2' => '₂',
+                            '3' => '₃',
+                            '4' => '₄',
+                            '5' => '₅',
+                            '6' => '₆',
+                            '7' => '₇',
+                            '8' => '₈',
+                            '9' => '₉',
+                            x => x,
+                        }
+                    })
+                    .collect::<String>()
+            } else {
+                unimplemented!()
+            }
         }
         fn render_list(xs: &Vec<Node>) -> String {
             xs.into_iter()
@@ -93,21 +100,21 @@ impl Node {
             }
             Node::Parens(xs, subscritp) => {
                 let xs = render_list(xs);
-                format!("({}){}", xs, fancy_unicode(*subscritp))
+                format!("({}){}", xs, fancy_unicode_subscript(&subscritp))
             }
             Node::Unit(element, subscritp) => {
-                format!("{}{}", element, fancy_unicode(*subscritp))
+                format!("{}{}", element, fancy_unicode_subscript(&subscritp))
             }
         }
     }
     pub fn from_str(source: &str) -> Option<Self> {
         crate::chem::parser::parse_group(source).ok().map(|(_, x)| x)
     }
-    pub fn root_coefficient(&self) -> usize {
+    pub fn root_coefficient(&self) -> Number {
         match self {
-            Node::Chunk(x, _, _) => *x,
-            Node::Parens(_, _) => 1,
-            Node::Unit(_, _) => 1,
+            Node::Chunk(x, _, _) => x.clone(),
+            Node::Parens(_, _) => Number::int(1),
+            Node::Unit(_, _) => Number::int(1),
         }
     }
     pub fn trans(self, func: Rc<RefCell<dyn Fn(Node) -> Option<Node>>>) -> Option<Node> {
@@ -134,25 +141,25 @@ impl Node {
     }
     pub fn atoms(&self) -> Vec<Element> {
         #[inline]
-        fn go(input: &[Node], mult: usize) -> Vec<Element> {
+        fn go(input: &[Node], mult: Number) -> Vec<Element> {
             let atms = input
                 .iter()
                 .flat_map(|x| x.atoms())
                 .collect::<Vec<_>>();
-            (1 ..= mult)
+            (1 ..= mult.unpack_integer().unwrap())
                 .into_iter()
                 .flat_map(|_| atms.clone())
                 .collect::<Vec<_>>()
         }
         match self {
             Node::Chunk(co, xs, _) => {
-                go(xs, *co)
+                go(xs, co.clone())
             }
             Node::Parens(xs, sub) => {
-                go(xs, *sub)
+                go(xs, sub.clone())
             }
             Node::Unit(x, sub) => {
-                (1 ..= *sub)
+                (1 ..= sub.unpack_integer().unwrap())
                     .into_iter()
                     .map(|_| x.clone())
                     .collect::<Vec<_>>()
@@ -190,13 +197,10 @@ impl Node {
         total_elements: &HashSet<Element>
     ) -> Row {
         let map = self.coefficient_map(total_elements);
-        // let row = na::RowDVector::from_vec(
-        //     map
-        //         .values()
-        //         .map(|x| *x as f64)
-        //         .collect::<Vec<_>>()
-        // );
-        // row
+        let xs = map
+            .values()
+            .map(|x| *x as f64)
+            .collect::<Vec<_>>();
         unimplemented!()
     }
     // pub fn coefficient_column(

@@ -47,7 +47,7 @@ pub fn is_uppercase(chr: char) -> bool {
     (chr as char).is_lowercase()
 }
 
-fn parse_number(source: &str) -> Result<(&str, BigRational), Error<&str>> {
+pub fn parse_number(source: &str) -> Result<(&str, BigRational), Error<&str>> {
     let (source, val) = nom::number::complete::double(source)?;
     let mut val = BigRational::from_f64(val).unwrap();
     fn exponent_parser(source: &str) -> Result<(&str, isize), Error<&str>> {
