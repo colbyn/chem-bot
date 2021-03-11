@@ -75,7 +75,95 @@ fn for_each(
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-// EXPRESSION AST (UNEVALUATED)
+// MATRIX DATA TYPE
+///////////////////////////////////////////////////////////////////////////////
+
+/// A dynamic matrix in **row major order**.
+#[derive(Clone, PartialEq)]
+pub struct Matrix(LinkedList<LinkedList<Expr>>);
+
+impl Matrix {
+    pub fn new() -> Self {Matrix(Default::default())}
+    pub fn from_rows(rows: LinkedList<LinkedList<Expr>>) -> Option<Self> {
+        let mut column_size = None;
+        let mut all_valid = true;
+        for row in rows.iter() {
+            match column_size {
+                None => {
+                    column_size = Some(row.len());
+                }
+                Some(ix) => {
+                    all_valid = row.len() == ix;
+                }
+            }
+        }
+        if all_valid {
+            Some(Matrix(rows))
+        } else {
+            None
+        }
+    }
+    pub fn append_row<T: Into<LinkedList<Expr>>>(&mut self, row: T) {
+        self.0.push_back(row.into());
+    }
+    pub fn append_column<T: Into<LinkedList<Expr>>>(
+        &mut self,
+        column: T,
+        on_empty: fn() -> Expr,
+    ) {
+        let mut column = column.into();
+        for row in self.0.iter_mut() {
+            let node = column
+                .pop_front()
+                .unwrap_or_else(on_empty);
+            row.push_back(node);
+        }
+    }
+    pub fn to_string(&self) -> String {
+        let mut rows = Vec::<String>::new();
+        for row in self.0.iter() {
+            let mut column = Vec::<String>::new();
+            for expr in row.iter() {
+                column.push(expr.to_string());
+            }
+            let column = column.join(",");
+            rows.push(format!(
+                "{}",
+                column
+            ));
+        }
+        rows.join("\n")
+    }
+}
+
+impl std::fmt::Display for Matrix {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.to_string())
+    }
+}
+
+impl std::fmt::Debug for Matrix {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut rows = self.0
+            .iter()
+            .map(|row| -> String {
+                let row = row.iter()
+                    .map(|x| format!("{:?}", x))
+                    .collect::<Vec<_>>()
+                    .join(",");
+                format!("[{}]", row)
+            })
+            .collect::<Vec<_>>()
+            .join(",\n");
+        // f.debug_list().entries(rows)
+        //     .finish()
+        write!(f, "{}", rows)
+    }
+}
+
+
+///////////////////////////////////////////////////////////////////////////////
+// EXPRESSION AST
 ///////////////////////////////////////////////////////////////////////////////
 
 #[derive(Debug, Clone, PartialEq)]
@@ -108,7 +196,7 @@ impl Symbol {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Clone, PartialEq)]
 pub enum Expr {
     Num(BigRational),
     Sym(Symbol),
@@ -723,11 +811,41 @@ impl std::fmt::Display for Expr {
     }
 }
 
+impl std::fmt::Debug for Expr {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Expr::Num(x) => {
+                write!(f, "Expr::Num({}, {})", x.numer(), x.denom())
+            }
+            Expr::Sym(x) => {
+                write!(f, "Expr::Sym({:?})", x)
+            }
+            Expr::Fraction(x) => {
+                write!(f, "Expr::Fraction({:?})", x)
+            }
+            Expr::Product(xs) => {
+                write!(f, "Expr::Product({:?})", xs)
+            }
+            Expr::Call(fun_call) => {
+                let mut args = Vec::<String>::new();
+                for arg in fun_call.pos_args.iter() {
+                    args.push(format!("{:?}", arg))
+                }
+                for (key, arg) in fun_call.key_args.iter() {
+                    args.push(format!("[{}, {:?}]", key, arg))
+                }
+                write!(f, "Expr::Call({}{:?})", fun_call.name, args.join(","))
+            }
+        }
+    }
+}
+
+
 ///////////////////////////////////////////////////////////////////////////////
 // DEV
 ///////////////////////////////////////////////////////////////////////////////
 
-pub fn main() {
+pub fn dev() {
     let run = |desc: &str, source: &str| {
         let result = Expr::from_str(source)
             .unwrap()
@@ -747,13 +865,36 @@ pub fn main() {
     // let expr = Expr::from_str("energy(from=electron(n=3), to=electron(n=4))").unwrap();
     // let result = expr.clone().eval();
     // println!("{:#?}", result.to_string());
-    run("energy of one mole of photons given wavelength", "mole(energy(photon(wavelength = nm(325))))");
-    run("energy of photon given wavelength", "energy(photon(wavelength = nm(325)))");
-    run("energy of photon given frequency", "energy(photon(frequency = GHz(275)))");
-    run("wavelength from frequency", "wavelength(frequency = MHz(72.5))");
-    run("frequency from wavelength", "frequency(wavelength = nm(325))");
+    run(
+        "energy of one mole of photons given wavelength",
+        "mole(energy(photon(wavelength = nm(325))))"
+    );
+    run(
+        "energy of photon given wavelength",
+        "energy(photon(wavelength = nm(325)))"
+    );
+    run(
+        "energy of photon given frequency",
+        "energy(photon(frequency = GHz(275)))"
+    );
+    run(
+        "wavelength from frequency",
+        "wavelength(frequency = MHz(72.5))"
+    );
+    run(
+        "frequency from wavelength",
+        "frequency(wavelength = nm(325))"
+    );
 }
 
+
+pub fn main() {
+    let matrix = matrix!{
+        (Expr::int(1)), (Expr::int(0)), (Expr::int(0));
+        (Expr::int(0)), (Expr::int(1)), (Expr::int(0));
+    };
+    println!("{:?}", matrix);
+}
 
 ///////////////////////////////////////////////////////////////////////////////
 // TESTS

@@ -1,6 +1,10 @@
 //! Common macros.
 
 
+///////////////////////////////////////////////////////////////////////////////
+// GENERAL
+///////////////////////////////////////////////////////////////////////////////
+
 #[macro_export]
 macro_rules! return_fun_call {
     ($constr:expr, $expr:expr) => {{
@@ -45,5 +49,47 @@ macro_rules! return_some {
             }
         }
     };
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// MATRIX
+///////////////////////////////////////////////////////////////////////////////
+
+
+// $(,)?
+/// Internal helper.
+#[macro_export]
+macro_rules! matrix_row {
+    ($row:expr;; $($entry:expr)*) => {
+        $(
+            $row.push_back($entry);
+        )*
+    };
+}
+
+// $(,)?
+/// Internal helper.
+#[macro_export]
+macro_rules! matrix_rows {
+    ($rows:expr;; $(
+        $($entry:expr),*
+    );*) => {
+        $({
+            let mut row: LinkedList<Expr> = LinkedList::new();
+            matrix_row!(row;; $($entry)*);
+            if !row.is_empty() {
+                $rows.push_back(row);
+            }
+        })*
+    };
+}
+
+#[macro_export]
+macro_rules! matrix {
+    ($($x:tt)*) => {{
+        let mut rows: LinkedList<LinkedList<Expr>> = LinkedList::new();
+        matrix_rows!(rows;; $($x)*);
+        Matrix::from_rows(rows)
+    }};
 }
 
