@@ -815,16 +815,19 @@ impl std::fmt::Debug for Expr {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Expr::Num(x) => {
-                write!(f, "Expr::Num({}, {})", x.numer(), x.denom())
+                write!(f, "Num({}, {})", x.numer(), x.denom())
             }
-            Expr::Sym(x) => {
-                write!(f, "Expr::Sym({:?})", x)
+            Expr::Sym(Symbol::Con(x)) => {
+                write!(f, "Con({:?})", x)
+            }
+            Expr::Sym(Symbol::Var(x)) => {
+                write!(f, "Var({:?})", x)
             }
             Expr::Fraction(x) => {
-                write!(f, "Expr::Fraction({:?})", x)
+                write!(f, "Fraction({:?})", x)
             }
             Expr::Product(xs) => {
-                write!(f, "Expr::Product({:?})", xs)
+                write!(f, "Product({:?})", xs)
             }
             Expr::Call(fun_call) => {
                 let mut args = Vec::<String>::new();
@@ -832,9 +835,9 @@ impl std::fmt::Debug for Expr {
                     args.push(format!("{:?}", arg))
                 }
                 for (key, arg) in fun_call.key_args.iter() {
-                    args.push(format!("[{}, {:?}]", key, arg))
+                    args.push(format!("[{:?}, {:?}]", key, arg))
                 }
-                write!(f, "Expr::Call({}{:?})", fun_call.name, args.join(","))
+                write!(f, "Expr::Call({}, {:?})", fun_call.name, args.join(","))
             }
         }
     }
@@ -893,7 +896,7 @@ pub fn main() {
         (Expr::int(1)), (Expr::int(0)), (Expr::int(0));
         (Expr::int(0)), (Expr::int(1)), (Expr::int(0));
     };
-    println!("{:?}", matrix);
+    println!("{:#?}", matrix);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
