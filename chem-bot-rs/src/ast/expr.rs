@@ -75,111 +75,6 @@ fn for_each(
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-// MATRIX DATA TYPE
-///////////////////////////////////////////////////////////////////////////////
-
-#[derive(Clone, PartialEq)]
-struct Row(LinkedList<Expr>);
-
-/// A dynamic matrix in **row major order**.
-#[derive(Clone, PartialEq)]
-pub struct Matrix(LinkedList<Row>);
-
-impl Matrix {
-    pub fn new() -> Self {Matrix(Default::default())}
-    pub fn from_rows(rows: LinkedList<LinkedList<Expr>>) -> Option<Self> {
-        let mut column_size = None;
-        let mut all_valid = true;
-        for row in rows.iter() {
-            match column_size {
-                None => {
-                    column_size = Some(row.len());
-                }
-                Some(ix) => {
-                    all_valid = row.len() == ix;
-                }
-            }
-        }
-        let rows = rows
-            .into_iter()
-            .map(Row)
-            .collect();
-        if all_valid {
-            Some(Matrix(rows))
-        } else {
-            None
-        }
-    }
-    pub fn append_row<T: Into<LinkedList<Expr>>>(&mut self, row: T) {
-        self.0.push_back(Row(row.into()));
-    }
-    pub fn append_column<T: Into<LinkedList<Expr>>>(
-        &mut self,
-        column: T,
-        on_empty: fn() -> Expr,
-    ) {
-        let mut column = column.into();
-        for row in self.0.iter_mut() {
-            let node = column
-                .pop_front()
-                .unwrap_or_else(on_empty);
-            row.0.push_back(node);
-        }
-    }
-    pub fn to_string(&self) -> String {
-        let mut rows = Vec::<String>::new();
-        let mut max_column_len = 0;
-        for row in self.0.iter() {
-            let mut column = Vec::<String>::new();
-            for expr in row.0.iter() {
-                column.push(expr.to_string());
-            }
-            let column = column.join(", ");
-            if column.len() > max_column_len {
-                max_column_len = column.len();
-            }
-            rows.push(column);
-        }
-        for row in rows.iter_mut() {
-            let added_len = max_column_len - row.len();
-            let spaces = (0..=added_len).map(|_| " ").collect::<String>();
-            *row = format!("  │{}{}│", row, spaces);
-        }
-        rows.join("\n")
-    }
-    pub fn rref(&self) -> Self {
-        for row in self.0.iter() {
-            
-        }
-        unimplemented!()
-    }
-}
-
-impl std::fmt::Display for Matrix {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.to_string())
-    }
-}
-
-impl std::fmt::Debug for Matrix {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let mut rows = self.0
-            .iter()
-            .map(|row| -> String {
-                let row = row.0.iter()
-                    .map(|x| format!("{:?}", x))
-                    .collect::<Vec<_>>()
-                    .join(",");
-                format!("  [{}]", row)
-            })
-            .collect::<Vec<_>>()
-            .join(",\n");
-        write!(f, "[\n{}\n]", rows)
-    }
-}
-
-
-///////////////////////////////////////////////////////////////////////////////
 // EXPRESSION AST
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -237,6 +132,20 @@ impl Expr {
     }
     pub fn var(x: &str) -> Self {
         Expr::Sym(Symbol::Var(x.to_owned()))
+    }
+    pub fn map_mut_num(&mut self, f: impl FnMut(BigRational) -> BigRational) {
+        let mut f = f;
+        match self {
+            Expr::Num(x) => {
+                *x = f(x.clone());
+            }
+            _ => {}
+        }
+    }
+    pub fn add(self, other: Expr) -> Option<Expr> {
+        let left = self.unpack_num()?;
+        let right = other.unpack_num()?;
+        Some(Expr::Num(left + right))
     }
     pub fn ratio(numerator: Expr, denominator: Expr) -> Self {
         Expr::Product(vec![
@@ -888,7 +797,7 @@ impl std::fmt::Debug for Expr {
 // DEV
 ///////////////////////////////////////////////////////////////////////////////
 
-pub fn dev() {
+pub fn main() {
     let run = |desc: &str, source: &str| {
         let result = Expr::from_str(source)
             .unwrap()
@@ -930,14 +839,6 @@ pub fn dev() {
     );
 }
 
-
-pub fn main() {
-    let matrix: Matrix = matrix!{
-        Expr::int(8), Expr::int(2), Expr::int(2);
-        Expr::int(9), Expr::int(1), Expr::int(1);
-    };
-    println!("{}", matrix);
-}
 
 ///////////////////////////////////////////////////////////////////////////////
 // TESTS

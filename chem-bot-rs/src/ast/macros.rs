@@ -56,40 +56,40 @@ macro_rules! return_some {
 ///////////////////////////////////////////////////////////////////////////////
 
 
-// $(,)?
-/// Internal helper.
-#[macro_export]
-macro_rules! matrix_row {
-    ($row:expr;; $($entry:expr)*) => {
-        $(
-            $row.push_back($entry);
-        )*
-    };
-}
+// // $(,)?
+// /// Internal helper.
+// #[macro_export]
+// macro_rules! matrix_row {
+//     ($row:expr;; $($entry:expr)*) => {
+//         $(
+//             $row.push($entry);
+//         )*
+//     };
+// }
 
-// $(,)?
-/// Internal helper.
-#[macro_export]
-macro_rules! matrix_rows {
-    ($rows:expr;; $(
-        $($entry:expr),*
-    );*) => {
-        $({
-            let mut row: LinkedList<Expr> = LinkedList::new();
-            matrix_row!(row;; $($entry)*);
-            if !row.is_empty() {
-                $rows.push_back(row);
-            }
-        })*
-    };
-}
+// // $(,)?
+// /// Internal helper.
+// #[macro_export]
+// macro_rules! matrix_rows {
+//     ($rows:expr;; $(
+//         $($entry:expr),*
+//     );*) => {
+//         $({
+//             let mut row: Vec<Expr> = Vec::new();
+//             matrix_row!(row;; $($entry)*);
+//             if !row.is_empty() {
+//                 $rows.push(row);
+//             }
+//         })*
+//     };
+// }
 
-#[macro_export]
-macro_rules! matrix {
-    ($($x:tt)*) => {{
-        let mut rows: LinkedList<LinkedList<Expr>> = LinkedList::new();
-        matrix_rows!(rows;; $($x)*);
-        Matrix::from_rows(rows).unwrap()
-    }};
-}
+// #[macro_export]
+// macro_rules! matrix {
+//     ($($x:tt)*) => {{
+//         let mut rows: Vec<Vec<Expr>> = Vec::new();
+//         matrix_rows!(rows;; $($x)*);
+//         Matrix::from_rows(rows).unwrap()
+//     }};
+// }
 
