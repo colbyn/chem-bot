@@ -134,6 +134,9 @@ impl std::fmt::Debug for Number {
         else if x.numer() == &one && x.denom() == &one {
             write!(f, "Number(1)")
         }
+        else if x.denom() == &one {
+            write!(f, "Number({})", x.numer())
+        }
         else {
             write!(f, "Number({}, {})", x.numer(), x.denom())
         }
