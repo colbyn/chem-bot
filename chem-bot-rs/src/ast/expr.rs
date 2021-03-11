@@ -121,16 +121,22 @@ impl Matrix {
     }
     pub fn to_string(&self) -> String {
         let mut rows = Vec::<String>::new();
+        let mut max_column_len = 0;
         for row in self.0.iter() {
             let mut column = Vec::<String>::new();
             for expr in row.iter() {
                 column.push(expr.to_string());
             }
-            let column = column.join(",");
-            rows.push(format!(
-                "  │{}│",
-                column
-            ));
+            let column = column.join(", ");
+            if column.len() > max_column_len {
+                max_column_len = column.len();
+            }
+            rows.push(column);
+        }
+        for row in rows.iter_mut() {
+            let added_len = max_column_len - row.len();
+            let spaces = (0..=added_len).map(|_| " ").collect::<String>();
+            *row = format!("  │{}{}│", row, spaces);
         }
         rows.join("\n")
     }
@@ -914,8 +920,8 @@ pub fn dev() {
 
 pub fn main() {
     let matrix = matrix!{
-        (Expr::int(1)), (Expr::int(0)), (Expr::int(0));
-        (Expr::int(0)), (Expr::int(1)), (Expr::int(0));
+        Expr::int(1), Expr::int(0), Expr::int(0);
+        Expr::int(0), Expr::int(1), Expr::var("xx");
     };
     println!("{}", matrix);
 }
