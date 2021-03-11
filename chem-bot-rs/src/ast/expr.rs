@@ -731,6 +731,13 @@ impl Expr {
         match self {
             Expr::Num(x) => {
                 fn run_basic(x: BigRational) -> Option<String> {
+                    let sign = {
+                        if x < BigRational::from_f32(0.0).unwrap() {
+                            "−"
+                        } else {
+                            ""
+                        }
+                    };
                     let num = x.numer().to_isize()?;
                     let den = x.denom().to_isize()?;
                     let check = |x: isize| {
@@ -815,19 +822,26 @@ impl std::fmt::Debug for Expr {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Expr::Num(x) => {
-                write!(f, "Num({}, {})", x.numer(), x.denom())
+                let check = |x: &BigInt, max_len| {
+                   format!("{}", x).len() > max_len && &x.abs() == x
+                };
+                if check(x.numer(), 2) || check(x.denom(), 3) {
+                    write!(f, "Expr::Num({})", x.to_f64().unwrap())
+                } else {
+                    write!(f, "Expr::Num({}, {})", x.numer(), x.denom())
+                }
             }
             Expr::Sym(Symbol::Con(x)) => {
-                write!(f, "Con({:?})", x)
+                write!(f, "Expr::Con({:?})", x)
             }
             Expr::Sym(Symbol::Var(x)) => {
-                write!(f, "Var({:?})", x)
+                write!(f, "Expr::Var({:?})", x)
             }
             Expr::Fraction(x) => {
-                write!(f, "Fraction({:?})", x)
+                write!(f, "Expr::Fraction({:?})", x)
             }
             Expr::Product(xs) => {
-                write!(f, "Product({:?})", xs)
+                write!(f, "Expr::Product({:?})", xs)
             }
             Expr::Call(fun_call) => {
                 let mut args = Vec::<String>::new();
@@ -848,13 +862,13 @@ impl std::fmt::Debug for Expr {
 // DEV
 ///////////////////////////////////////////////////////////////////////////////
 
-pub fn dev() {
+pub fn main() {
     let run = |desc: &str, source: &str| {
         let result = Expr::from_str(source)
             .unwrap()
             .eval();
         println!("RUN: {}", desc);
-        println!("\t{}", result.to_string());
+        println!("{:?}\n", result);
     };
     // let expr = Expr::from_str("mole(energy(photon(wavelength = nm(325))))").unwrap();
     // let result = expr.clone().eval();
@@ -891,13 +905,13 @@ pub fn dev() {
 }
 
 
-pub fn main() {
-    let matrix = matrix!{
-        (Expr::int(1)), (Expr::int(0)), (Expr::int(0));
-        (Expr::int(0)), (Expr::int(1)), (Expr::int(0));
-    };
-    println!("{:#?}", matrix);
-}
+// pub fn main() {
+//     let matrix = matrix!{
+//         (Expr::int(1)), (Expr::int(0)), (Expr::int(0));
+//         (Expr::int(0)), (Expr::int(1)), (Expr::int(0));
+//     };
+//     println!("{:#?}", matrix);
+// }
 
 ///////////////////////////////////////////////////////////////////////////////
 // TESTS
